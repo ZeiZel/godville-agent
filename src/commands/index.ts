@@ -1,4 +1,5 @@
 import { backupCommand } from "./backup.js";
+import { dashboardCommand } from "./dashboard.js";
 import { browserCheckCommand } from "./browser-check.js";
 import { browserInspectCommand } from "./browser-inspect.js";
 import { browserRunCommand } from "./browser-run.js";
@@ -22,6 +23,7 @@ const commands: readonly Command[] = [
   browserRunCommand,
   liveCommand,
   backupCommand,
+  dashboardCommand,
 ];
 export function createCommandRegistry(items: readonly Command[] = commands): Map<string, Command> {
   const builder = new CommandRegistryBuilder();

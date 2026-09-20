@@ -1,0 +1,87 @@
+/**
+ * Small read-only activity dashboard served by the local agent.
+ *
+ * The page deliberately has no gameplay controls.  The server owns all
+ * decisions; this document only reads /api/status and renders its response.
+ */
+export const DASHBOARD_HTML = String.raw`<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Godville Agent · обзор</title>
+  <style>
+    :root { color-scheme: dark; --bg:#08131f; --panel:#0f2030; --panel2:#12283a; --line:#214052; --text:#e8f1f5; --muted:#8fa9b7; --teal:#55d2c0; --amber:#f4c878; --red:#f48787; --blue:#87b9f4; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-width:320px; background:radial-gradient(circle at 80% -10%,#163b4c 0,#08131f 44rem); color:var(--text); font:15px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    main { width:min(1120px,calc(100% - 32px)); margin:0 auto; padding:32px 0 48px; }
+    header { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; margin-bottom:26px; }
+    h1,h2,p { margin:0; } h1 { font-size:clamp(23px,4vw,32px); letter-spacing:-.02em; } h2 { font-size:16px; font-weight:650; }
+    .eyebrow { color:var(--teal); text-transform:uppercase; letter-spacing:.13em; font-size:11px; font-weight:700; margin-bottom:7px; }
+    .subtle { color:var(--muted); }
+    button { border:1px solid #397466; border-radius:9px; background:#153b3b; color:var(--text); cursor:pointer; font:inherit; padding:9px 13px; transition:background .15s,border-color .15s; }
+    button:hover,button:focus-visible { background:#1d5552; border-color:var(--teal); outline:none; } button:disabled { cursor:wait; opacity:.65; }
+    .status { display:inline-flex; align-items:center; gap:8px; border:1px solid var(--line); border-radius:999px; padding:7px 11px; color:var(--muted); white-space:nowrap; }
+    .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); } .status.ok .dot { background:var(--teal); box-shadow:0 0 0 4px #55d2c01e; } .status.warn .dot { background:var(--amber); } .status.bad .dot { background:var(--red); }
+    .toolbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; } .toolbar .subtle { font-size:13px; }
+    .cards { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-bottom:16px; }
+    .card,.panel { background:linear-gradient(145deg,#112638e8,#0c1b2aeb); border:1px solid var(--line); border-radius:14px; box-shadow:0 12px 30px #00000016; }
+    .card { padding:16px; min-height:112px; } .card-label { color:var(--muted); font-size:13px; } .value { display:block; margin-top:8px; font-size:25px; font-weight:700; letter-spacing:-.03em; } .value small { color:var(--muted); font-size:14px; font-weight:500; letter-spacing:0; }
+    .meter { height:5px; border-radius:4px; background:#203745; margin-top:12px; overflow:hidden; } .meter i { display:block; height:100%; border-radius:inherit; background:var(--teal); transition:width .3s; }
+    .grid { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(280px,.65fr); gap:16px; } .panel { padding:18px; } .panel-title { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; }
+    .action { display:grid; grid-template-columns:auto 1fr auto; gap:14px; align-items:center; padding:13px 0; } .action + .action { border-top:1px solid #1a3545; }
+    .action-mark { display:grid; place-items:center; width:34px; height:34px; border-radius:10px; background:#193644; color:var(--teal); font-weight:700; } .action-mark.skipped { color:var(--amber); background:#3c321d; } .action-mark.ambiguous { color:var(--red); background:#422727; }
+    .action-main { min-width:0; } .action-name { font-weight:650; overflow-wrap:anywhere; } .action-reason { color:var(--muted); font-size:13px; overflow-wrap:anywhere; } .action-time { color:var(--muted); font-size:12px; white-space:nowrap; }
+    .tag { display:inline-flex; border:1px solid var(--line); color:var(--muted); border-radius:6px; padding:2px 7px; font-size:11px; margin-left:6px; vertical-align:1px; } .tag.confirmed { color:var(--teal); border-color:#397466; } .tag.skipped { color:var(--amber); border-color:#715b2d; } .tag.ambiguous { color:var(--red); border-color:#714040; }
+    .facts { display:grid; gap:12px; } .fact { display:flex; justify-content:space-between; gap:14px; border-bottom:1px solid #1a3545; padding-bottom:10px; } .fact:last-child { border-bottom:0; padding-bottom:0; } .fact dt { color:var(--muted); } .fact dd { margin:0; text-align:right; overflow-wrap:anywhere; }
+    .notice { border:1px solid #725d30; background:#3b301b88; border-radius:10px; color:#f5d99a; padding:11px 12px; font-size:13px; margin-bottom:16px; } .notice[hidden], .empty[hidden] { display:none; }
+    .empty { color:var(--muted); padding:22px 0 8px; text-align:center; } .error { border-color:#704044; background:#3b202588; color:#ffc1c1; } .stale { border-color:#725d30; }
+    .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+    @media (max-width:760px) { main { width:min(100% - 22px,600px); padding-top:22px; } header { align-items:stretch; flex-direction:column; } .cards { grid-template-columns:repeat(2,minmax(0,1fr)); } .grid { grid-template-columns:1fr; } }
+    @media (max-width:400px) { .cards { grid-template-columns:1fr 1fr; gap:8px; } .card { padding:12px; min-height:102px; } .value { font-size:21px; } .action { grid-template-columns:auto 1fr; } .action-time { grid-column:2; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div><p class="eyebrow">локальный агент</p><h1>Состояние героя</h1><p id="hero-subtitle" class="subtle" aria-live="polite">Загрузка наблюдения…</p></div>
+      <div class="toolbar"><span id="status-badge" class="status" role="status"><i class="dot" aria-hidden="true"></i><span>Проверка связи…</span></span><button id="refresh" type="button">Обновить</button></div>
+    </header>
+    <div id="notice" class="notice" role="status" hidden></div>
+    <section class="cards" aria-label="Текущие показатели">
+      <article class="card"><span class="card-label">Здоровье</span><strong id="health" class="value">—</strong><div class="meter" aria-hidden="true"><i id="health-meter" style="width:0%"></i></div></article>
+      <article class="card"><span class="card-label">Прана</span><strong id="prana" class="value">—</strong><div class="meter" aria-hidden="true"><i id="prana-meter" style="width:0%"></i></div></article>
+      <article class="card"><span class="card-label">Заряды</span><strong id="charges" class="value">—</strong><span id="reserve" class="subtle">Резерв: —</span></article>
+      <article class="card"><span class="card-label">Режим</span><strong id="mode" class="value">—</strong><span id="freshness" class="subtle">Состояние: —</span></article>
+    </section>
+    <div class="grid">
+      <section class="panel" aria-labelledby="timeline-title"><div class="panel-title"><h2 id="timeline-title">Последние циклы</h2><span id="cycle-count" class="subtle">—</span></div><div id="timeline"><p class="empty">История появится после первого цикла.</p></div></section>
+      <aside class="panel" aria-labelledby="details-title"><div class="panel-title"><h2 id="details-title">Последнее действие</h2></div><div id="last-action"><p class="empty">Действий пока нет.</p></div><dl id="facts" class="facts" hidden><div class="fact"><dt>Наблюдение</dt><dd id="observed-at">—</dd></div><div class="fact"><dt>Событие</dt><dd id="event-id">—</dd></div><div class="fact"><dt>Ошибки</dt><dd id="error-count">—</dd></div></dl></aside>
+    </div>
+  </main>
+  <script>
+  (() => {
+    "use strict";
+    const $ = (id) => document.getElementById(id);
+    const text = (id, value) => { const node = $(id); if (node) node.textContent = value; };
+    const safeObject = (value) => value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    const observationOf = (data) => safeObject(data.observation || data.status || data);
+    const num = (value) => typeof value === "number" && Number.isFinite(value) ? value : null;
+    const first = (...values) => values.find((value) => value !== undefined && value !== null);
+    const modeNames = { idle:"Ожидание", arena:"Арена", dungeon:"Подземелье", sailing:"Плавание", polygon:"Полигон", raid_boss:"Рейдовый босс", personal_boss:"Личный босс", shop:"Магазин", unknown:"Неизвестно" };
+    const statusNames = { confirmed:"Подтверждено", executed:"Выполнено", clicked:"Выполнено", skipped:"Пропущено", no_op:"Проверка", noop:"Проверка", ambiguous:"Неоднозначно", failed:"Ошибка", error:"Ошибка" };
+    const actionNames = { "hero.encourage":"Сделать хорошо", "hero.discourage":"Сделать плохо", "zpg.start":"Запуск арены", "expedition.sail":"Отправка в плавание", "dungeon.enter":"Вход в подземелье" };
+    const localTime = (value) => { if (!value) return "—"; const date = new Date(value); return Number.isNaN(date.valueOf()) ? "—" : date.toLocaleString("ru-RU", { dateStyle:"short", timeStyle:"short" }); };
+    const statusClass = (value) => { const lower = String(value || "").toLowerCase(); return lower.includes("ambig") || lower.includes("error") || lower.includes("fail") ? "ambiguous" : lower.includes("skip") ? "skipped" : "confirmed"; };
+    const reasonText = (value) => { const reasons = { "health.low":"Здоровье ниже порога политики", "budget.reserve":"Сохранён резерв зарядов", "cooldown.active":"Действие на перезарядке", "freshness.stale":"Наблюдение устарело", "mode.unknown":"Режим не распознан" }; return reasons[value] || value || "Причина не указана"; };
+    const setStatus = (kind, label) => { const node = $("status-badge"); node.className = "status " + kind; node.lastElementChild.textContent = label; };
+    const renderMetric = (id, current, capacity, suffix) => { const currentNumber = num(current); const capacityNumber = num(capacity); text(id, currentNumber === null ? "—" : String(Math.round(currentNumber)) + (suffix || "")); return currentNumber !== null && capacityNumber && capacityNumber > 0 ? Math.max(0, Math.min(100, currentNumber / capacityNumber * 100)) : null; };
+    const renderAction = (target, raw) => { target.replaceChildren(); if (!raw || typeof raw !== "object") { const empty = document.createElement("p"); empty.className = "empty"; empty.textContent = "Действий пока нет."; target.append(empty); return; } const state = String(first(raw.status, raw.state, raw.kind, "no_op")); const mark = document.createElement("div"); mark.className = "action-mark " + statusClass(state); mark.textContent = state === "ambiguous" ? "!" : state === "skipped" ? "–" : "✓"; const body = document.createElement("div"); body.className = "action-main"; const name = document.createElement("div"); name.className = "action-name"; name.textContent = actionNames[raw.action || raw.command || raw.id] || String(first(raw.action, raw.command, raw.id, "Проверка")); const tag = document.createElement("span"); tag.className = "tag " + statusClass(state); tag.textContent = statusNames[state] || state; name.append(tag); const reason = document.createElement("div"); reason.className = "action-reason"; reason.textContent = reasonText(first(raw.reason, raw.reasonCode)); body.append(name, reason); const time = document.createElement("time"); time.className = "action-time"; time.dateTime = String(first(raw.at, raw.createdAt, raw.observedAt, "")); time.textContent = localTime(time.dateTime); target.append(Object.assign(document.createElement("div"), { className:"action" })); const row = target.lastElementChild; row.append(mark, body, time); };
+    const renderTimeline = (items) => { const target = $("timeline"); target.replaceChildren(); const list = Array.isArray(items) ? items.slice(0, 40) : []; text("cycle-count", list.length ? "Показано " + list.length : "Нет данных"); if (!list.length) { const empty = document.createElement("p"); empty.className = "empty"; empty.textContent = "История появится после первого цикла."; target.append(empty); return; } list.forEach((item) => renderAction(target, item)); };
+    const render = (payload) => { const data = safeObject(payload); const obs = observationOf(data); const resources = safeObject(data.resources); const identity = safeObject(data.identity); const latest = safeObject(first(data.latestObservation, obs)); const actionList = Array.isArray(data.cycles) ? data.cycles : []; const action = safeObject(first(data.lastAction, data.last_action, actionList[0])); const healthPercent = num(first(resources.healthPercent, latest.healthPercent, obs.healthPercent, data.healthPercent)); const pranaCurrent = num(first(resources.prana, latest.prana, safeObject(obs.prana).current, data.prana)); const pranaCapacity = num(first(resources.pranaCapacity, latest.pranaCapacity, safeObject(obs.prana).capacity, data.pranaCapacity)); const charges = num(first(resources.charges, latest.charges, obs.charges, data.charges)); const reserve = num(first(resources.reserveCharges, data.reserveCharges, data.reserve)); const health = renderMetric("health", healthPercent, 100, "%"); $("health-meter").style.width = (health === null ? 0 : health) + "%"; const pranaMeter = renderMetric("prana", pranaCurrent, pranaCapacity); $("prana-meter").style.width = (pranaMeter === null ? 0 : pranaMeter) + "%"; text("charges", charges === null ? "—" : String(Math.round(charges))); text("reserve", reserve === null ? "Резерв: —" : "Резерв: " + Math.round(reserve)); const mode = String(first(latest.mode, obs.mode, data.mode, "unknown")); text("mode", modeNames[mode] || mode); text("freshness", "Состояние: " + String(first(data.freshness, latest.freshness, obs.freshness, "—"))); const heroId = first(identity.heroId, latest.heroId, obs.heroId, data.heroId); text("hero-subtitle", heroId ? "Герой: " + heroId : "Только локальное наблюдение"); renderAction($("last-action"), action); const facts = $("facts"); facts.hidden = false; text("observed-at", localTime(first(latest.observedAt, obs.observedAt, data.generatedAt, data.observedAt))); text("event-id", first(latest.eventId, obs.eventId, data.eventId) ? String(first(latest.eventId, obs.eventId, data.eventId)).slice(0, 24) : "—"); const logs = safeObject(data.logs); const errors = Array.isArray(data.errors) ? data.errors : (Array.isArray(logs.stderr) ? logs.stderr : []); text("error-count", errors.length ? String(errors.length) : "Нет"); renderTimeline(actionList.length ? actionList : (Object.keys(action).length ? [action] : [])); const stale = String(first(data.freshness, latest.freshness, obs.freshness, "")).toLowerCase(); const notice = $("notice"); notice.hidden = true; notice.className = "notice"; if (stale === "stale" || stale === "expired") { notice.hidden = false; notice.classList.add("stale"); notice.textContent = "Наблюдение устарело. Агент не должен принимать решения по этим данным."; } if (errors.length) { notice.hidden = false; notice.className = "notice error"; notice.textContent = "В последних циклах обнаружено ошибок: " + errors.length + ". Подробности доступны в журнале агента."; } setStatus(stale === "fresh" ? "ok" : stale ? "warn" : "", stale === "fresh" ? "Последняя проверка актуальна" : stale ? "Данные устарели" : "Данные получены"); };
+    const load = async () => { const button = $("refresh"); button.disabled = true; try { const response = await fetch("/api/status", { headers: { accept:"application/json" }, cache:"no-store" }); if (!response.ok) throw new Error("HTTP " + response.status); render(await response.json()); } catch (error) { setStatus("bad", "Нет связи"); const notice = $("notice"); notice.hidden = false; notice.className = "notice error"; notice.textContent = "Не удалось получить состояние агента. Проверьте локальный сервис."; } finally { button.disabled = false; } };
+    $("refresh").addEventListener("click", load); load(); window.setInterval(load, 5000);
+  })();
+  </script>
+</body>
+</html>`;
