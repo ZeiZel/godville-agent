@@ -1,0 +1,10 @@
+node_modules
+dist
+data
+secrets
+browser-state
+logs
+.git
+.env
+.env.*
+docs/specs/godville-agent/06-aizel-plan.md

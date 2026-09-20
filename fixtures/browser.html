@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><title>Local browser fixture</title></head>
+  <body data-mode="idle" data-marker="zpg-arena">
+    <script id="agent-observation" type="application/json" data-agent-observation>{"version":"observation/v1","observedAt":"2026-09-20T10:00:00.000Z","sourceVersion":"fixture/v1","freshness":"fresh","mode":"idle","capabilities":[],"progressionKnown":true,"prana":{"current":100,"capacity":100},"health":"known_safe","cooldowns":{"zpg-arena":"2026-09-20T09:00:00.000Z"},"rawShape":["zpg-arena"]}</script>
+    <button type="button" id="zpg-start">UNVERIFIED ZPG BUTTON TEXT</button>
+    <output id="result">idle</output>
+    <script>
+      document.getElementById("zpg-start").addEventListener("click", () => {
+        document.body.dataset.mode = "arena";
+        document.getElementById("result").textContent = "arena";
+        const observation = JSON.parse(document.getElementById("agent-observation").textContent);
+        observation.mode = "arena";
+        observation.observedAt = new Date().toISOString();
+        document.getElementById("agent-observation").textContent = JSON.stringify(observation);
+      });
+    </script>
+  </body>
+</html>
