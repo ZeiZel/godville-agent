@@ -3,19 +3,19 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "bun@1.4.2",
   "engines": {
-    "node": ">=24 <25"
+    "bun": "1.4.2"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "check": "tsc --noEmit -p tsconfig.json",
-    "test": "tsx --test test/**/*.test.ts",
-    "start": "node --env-file-if-exists=.env dist/cli.js",
-    "dev": "node --env-file-if-exists=.env --import tsx src/cli.ts"
+    "build": "bun build ./src/cli.ts --outdir ./dist --target bun --external playwright",
+    "check": "bun ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+    "test": "bun test",
+    "start": "bun ./dist/cli.js",
+    "dev": "bun ./src/cli.ts"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
-    "tsx": "^4.20.0",
+    "@types/bun": "1.4.2",
     "typescript": "^5.8.0"
   },
   "dependencies": {

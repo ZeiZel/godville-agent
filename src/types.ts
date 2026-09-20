@@ -12,12 +12,16 @@ export interface ObservationV1 {
   sourceVersion: string;
   freshness: "fresh" | "stale" | "expired" | "auth_degraded";
   heroId?: string;
+  /** Stable current game-event identity when the adapter can derive one; absent means live commands fail closed. */
+  eventId?: string;
   mode: Mode;
   capabilities: Capability[];
   progressionKnown: boolean;
   prana?: { current: number; capacity: number };
   charges?: number;
   health: Health;
+  /** Exact observed health percentage, separate from the coarse health classification. */
+  healthPercent?: number;
   cooldowns: Record<string, string>;
   rawShape: string[];
 }
@@ -54,5 +58,6 @@ export interface RuntimeConfig {
   api?: { godName: string; tokenFile?: string; intervalSeconds: number };
   budget: BudgetPolicy;
   zpg: { enabled: boolean; confirmation: boolean; minOffsetSeconds: number; maxOffsetSeconds: number };
+  livePolicyFile?: string;
   browser: { enabled: boolean; manifestFile?: string; stateDir?: string; headless: boolean; allowRemoteUrl: boolean };
 }

@@ -36,7 +36,7 @@ export const daemonCommand: Command = new CommandBuilder().named("daemon").usage
     const { db, config } = context;
     if (!db.acquireLease("daemon", owner, ttl)) throw new Error("another daemon holds the writer lease");
     const token = db.leaseToken("daemon", owner); if (token === undefined) throw new Error("writer lease was not readable");
-    db.recoverUncertainOperations("daemon", owner, token);
+    // Browser writers recover their own EXECUTED operations under the shared browser lease.
     let stopped = false; const stop = () => { stopped = true; };
     process.once("SIGINT", stop); process.once("SIGTERM", stop);
     try {

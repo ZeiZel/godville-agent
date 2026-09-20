@@ -1,4 +1,4 @@
-import { DatabaseSync } from "node:sqlite";
+import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
@@ -10,10 +10,10 @@ export interface StoredOperation { id: string; intentKey: string; handler: strin
 const validDate = (value: Date): boolean => Number.isFinite(value.getTime());
 
 export class AgentDatabase {
-  readonly db: DatabaseSync;
+  readonly db: Database;
   constructor(dataDir: string) {
     mkdirSync(dataDir, { recursive: true });
-    this.db = new DatabaseSync(join(dataDir, "godville.sqlite"));
+    this.db = new Database(join(dataDir, "godville.sqlite"));
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;");
     this.migrate();
   }
@@ -41,7 +41,7 @@ export class AgentDatabase {
   saveObservation(observation: ObservationV1, source = "api"): string {
     const payload = JSON.stringify(observation);
     const hash = createHash("sha256").update(payload).digest("hex");
-    const existing = this.db.prepare("SELECT id FROM observations WHERE content_hash=?").get(hash) as { id: string } | undefined;
+    const existing = this.db.prepare("SELECT id FROM observations WHERE content_hash=?").get(hash) as { id: string } | null;
     if (existing) return existing.id;
     const id = randomUUID();
     this.db.prepare("INSERT INTO observations(id,observed_at,source,schema_version,content_hash,payload) VALUES(?,?,?,?,?,?)").run(id, observation.observedAt, source, observation.version, hash, payload);
@@ -56,19 +56,19 @@ export class AgentDatabase {
   }
   setUserSetting(key: string, version: number, value: unknown): void { this.db.prepare("INSERT OR IGNORE INTO user_settings(key,version,value,updated_at) VALUES(?,?,?,?)").run(key, version, JSON.stringify(value), new Date().toISOString()); }
   savePriorities(version: number, priorities: string[]): void { this.db.prepare("INSERT OR IGNORE INTO user_priorities(version,priorities,created_at) VALUES(?,?,?)").run(version, JSON.stringify(priorities), new Date().toISOString()); }
-  latestPriorities(): string[] | undefined { const row = this.db.prepare("SELECT priorities FROM user_priorities ORDER BY version DESC LIMIT 1").get() as { priorities: string } | undefined; return row ? JSON.parse(row.priorities) as string[] : undefined; }
+  latestPriorities(): string[] | undefined { const row = this.db.prepare("SELECT priorities FROM user_priorities ORDER BY version DESC LIMIT 1").get() as { priorities: string } | null; return row ? JSON.parse(row.priorities) as string[] : undefined; }
   acquireLease(name: string, owner: string, ttlMs: number, now = new Date()): boolean {
     if (!name || !owner || !Number.isSafeInteger(ttlMs) || ttlMs <= 0 || !validDate(now)) return false;
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      const prior = this.db.prepare("SELECT fencing_token,expires_at FROM leases WHERE name=?").get(name) as { fencing_token: number; expires_at: string } | undefined;
+      const prior = this.db.prepare("SELECT fencing_token,expires_at FROM leases WHERE name=?").get(name) as { fencing_token: number; expires_at: string } | null;
       if (prior && prior.expires_at > now.toISOString()) { this.db.exec("ROLLBACK"); return false; }
       this.db.prepare("INSERT INTO leases(name,owner,fencing_token,expires_at) VALUES(?,?,?,?) ON CONFLICT(name) DO UPDATE SET owner=excluded.owner,fencing_token=excluded.fencing_token,expires_at=excluded.expires_at").run(name, owner, Number(prior?.fencing_token ?? 0) + 1, new Date(now.getTime() + ttlMs).toISOString());
       this.db.exec("COMMIT"); return true;
     } catch (error) { this.db.exec("ROLLBACK"); throw error; }
   }
   leaseToken(name: string, owner: string): number | undefined {
-    const row = this.db.prepare("SELECT fencing_token FROM leases WHERE name=? AND owner=?").get(name, owner) as { fencing_token: number } | undefined;
+    const row = this.db.prepare("SELECT fencing_token FROM leases WHERE name=? AND owner=?").get(name, owner) as { fencing_token: number } | null;
     return row ? Number(row.fencing_token) : undefined;
   }
   renewLease(name: string, owner: string, fencingToken: number, ttlMs: number, now = new Date()): boolean {
@@ -78,21 +78,21 @@ export class AgentDatabase {
   }
   hasLease(name: string, owner: string, fencingToken: number, now = new Date()): boolean {
     if (!validDate(now)) return false;
-    return this.db.prepare("SELECT 1 FROM leases WHERE name=? AND owner=? AND fencing_token=? AND expires_at>?").get(name, owner, fencingToken, now.toISOString()) !== undefined;
+    return this.db.prepare("SELECT 1 FROM leases WHERE name=? AND owner=? AND fencing_token=? AND expires_at>?").get(name, owner, fencingToken, now.toISOString()) != null;
   }
   releaseLease(name: string, owner: string, fencingToken?: number): void {
     if (fencingToken === undefined) this.db.prepare("DELETE FROM leases WHERE name=? AND owner=?").run(name, owner);
     else this.db.prepare("DELETE FROM leases WHERE name=? AND owner=? AND fencing_token=?").run(name, owner, fencingToken);
   }
   saveDecision(decision: Decision, observationId: string | undefined, knowledgeVersion: string, ruleVersion: string): string {
-    const prior = observationId ? this.db.prepare("SELECT id FROM decisions WHERE observation_id=? AND rule_version=?").get(observationId, ruleVersion) as { id: string } | undefined : undefined;
+    const prior = observationId ? this.db.prepare("SELECT id FROM decisions WHERE observation_id=? AND rule_version=?").get(observationId, ruleVersion) as { id: string } | null : undefined;
     if (prior) return prior.id;
     const id = decision.id;
     this.db.prepare("INSERT INTO decisions(id,created_at,observation_id,knowledge_version,rule_version,payload) VALUES(?,?,?,?,?,?)").run(id, new Date().toISOString(), observationId ?? null, knowledgeVersion, ruleVersion, JSON.stringify(decision));
     return id;
   }
   createOperation(intentKey: string, decisionId: string | undefined, handler: string, handlerVersion: number, precondition: unknown, postcondition: unknown): StoredOperation {
-    const existing = this.db.prepare("SELECT id,intent_key as intentKey,handler,handler_version as handlerVersion,state FROM operations WHERE intent_key=?").get(intentKey) as StoredOperation | undefined;
+    const existing = this.db.prepare("SELECT id,intent_key as intentKey,handler,handler_version as handlerVersion,state FROM operations WHERE intent_key=?").get(intentKey) as StoredOperation | null;
     if (existing) return existing;
     const id = randomUUID(), now = new Date().toISOString();
     this.db.prepare("INSERT OR IGNORE INTO operations(id,intent_key,decision_id,handler,handler_version,precondition,postcondition,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)").run(id, intentKey, decisionId ?? null, handler, handlerVersion, JSON.stringify(precondition), JSON.stringify(postcondition), "PLANNED", now, now);
@@ -104,13 +104,13 @@ export class AgentDatabase {
   }
   /** An EXECUTED or AMBIGUOUS handler outcome may have reached the game; never issue a new intent before reconciliation. */
   hasUnresolvedOperation(handler: string): boolean {
-    return this.db.prepare("SELECT 1 FROM operations WHERE handler=? AND state IN ('EXECUTED','AMBIGUOUS') LIMIT 1").get(handler) !== undefined;
+    return this.db.prepare("SELECT 1 FROM operations WHERE handler=? AND state IN ('EXECUTED','AMBIGUOUS') LIMIT 1").get(handler) != null;
   }
   recoverUncertainOperations(leaseName?: string, owner?: string, fencingToken?: number, now = new Date()): number {
     if (!leaseName || !owner || fencingToken === undefined || !this.hasLease(leaseName, owner, fencingToken, now)) return 0;
     return Number(this.db.prepare("UPDATE operations SET state='AMBIGUOUS',updated_at=? WHERE state='EXECUTED'").run(now.toISOString()).changes);
   }
-  isCooldownActive(name: string, now: Date): boolean { return this.db.prepare("SELECT 1 FROM cooldowns WHERE name=? AND expires_at>? ").get(name, now.toISOString()) !== undefined; }
+  isCooldownActive(name: string, now: Date): boolean { return this.db.prepare("SELECT 1 FROM cooldowns WHERE name=? AND expires_at>? ").get(name, now.toISOString()) != null; }
   confirmCooldown(name: string, operationId: string, expiresAt: Date): void { this.db.prepare("INSERT INTO cooldowns(name,confirmed_at,expires_at,operation_id) VALUES(?,?,?,?) ON CONFLICT(name) DO UPDATE SET confirmed_at=excluded.confirmed_at,expires_at=excluded.expires_at,operation_id=excluded.operation_id").run(name, new Date().toISOString(), expiresAt.toISOString(), operationId); }
   importBalance(charges: number, note = "manual reconciliation", now = new Date()): boolean {
     if (!Number.isSafeInteger(charges) || charges < 0 || !note || !validDate(now)) return false;
@@ -118,7 +118,7 @@ export class AgentDatabase {
     return true;
   }
   currentBalance(): number | undefined {
-    const row = this.db.prepare("SELECT charges FROM charge_ledger WHERE kind='BALANCE' ORDER BY rowid DESC LIMIT 1").get() as { charges: number } | undefined;
+    const row = this.db.prepare("SELECT charges FROM charge_ledger WHERE kind='BALANCE' ORDER BY rowid DESC LIMIT 1").get() as { charges: number } | null;
     return row ? Number(row.charges) : undefined;
   }
   reservedCharges(): number {
@@ -132,7 +132,7 @@ export class AgentDatabase {
     return Number(active.total) + Number(confirmed.total);
   }
   availableCharges(): number | undefined {
-    const balanceRow = this.db.prepare("SELECT rowid,charges FROM charge_ledger WHERE kind='BALANCE' ORDER BY rowid DESC LIMIT 1").get() as { rowid: number; charges: number } | undefined;
+    const balanceRow = this.db.prepare("SELECT rowid,charges FROM charge_ledger WHERE kind='BALANCE' ORDER BY rowid DESC LIMIT 1").get() as { rowid: number; charges: number } | null;
     if (!balanceRow) return undefined;
     const confirmed = this.db.prepare("SELECT COALESCE(SUM(charges),0) total FROM charge_ledger WHERE kind='CONFIRM' AND rowid>?").get(balanceRow.rowid) as { total: number };
     return Number(balanceRow.charges) - Number(confirmed.total) - this.reservedCharges();
@@ -141,7 +141,7 @@ export class AgentDatabase {
     this.db.exec("BEGIN IMMEDIATE");
     try {
       if (!decisionId || !operationId || !Number.isSafeInteger(charges) || charges <= 0 || !this.validPolicy(policy) || !validDate(now) || (expedition !== undefined && !expedition)) { this.db.exec("ROLLBACK"); return false; }
-      const existing = this.db.prepare("SELECT charges,operation_id FROM charge_ledger WHERE kind='RESERVE' AND decision_id=?").get(decisionId) as { charges: number; operation_id: string } | undefined;
+      const existing = this.db.prepare("SELECT charges,operation_id FROM charge_ledger WHERE kind='RESERVE' AND decision_id=?").get(decisionId) as { charges: number; operation_id: string } | null;
       if (existing) {
         const resolved = this.db.prepare("SELECT 1 FROM charge_ledger WHERE decision_id=? AND kind IN ('CONFIRM','CANCEL')").get(decisionId);
         const repeat = !resolved && Number(existing.charges) === charges && existing.operation_id === operationId;
@@ -159,9 +159,9 @@ export class AgentDatabase {
     if (!decisionId || !operationId || (state !== "CONFIRM" && state !== "CANCEL") || !validDate(now)) return false;
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      const reserved = this.db.prepare("SELECT charges,operation_id FROM charge_ledger WHERE kind='RESERVE' AND decision_id=?").get(decisionId) as { charges: number; operation_id: string } | undefined;
+      const reserved = this.db.prepare("SELECT charges,operation_id FROM charge_ledger WHERE kind='RESERVE' AND decision_id=?").get(decisionId) as { charges: number; operation_id: string } | null;
       if (!reserved || reserved.operation_id !== operationId) { this.db.exec("ROLLBACK"); return false; }
-      const resolved = this.db.prepare("SELECT kind,operation_id FROM charge_ledger WHERE kind IN ('CONFIRM','CANCEL') AND decision_id=?").get(decisionId) as { kind: "CONFIRM" | "CANCEL"; operation_id: string } | undefined;
+      const resolved = this.db.prepare("SELECT kind,operation_id FROM charge_ledger WHERE kind IN ('CONFIRM','CANCEL') AND decision_id=?").get(decisionId) as { kind: "CONFIRM" | "CANCEL"; operation_id: string } | null;
       if (resolved) {
         const repeat = resolved.kind === state && resolved.operation_id === operationId;
         this.db.exec(repeat ? "COMMIT" : "ROLLBACK"); return repeat;

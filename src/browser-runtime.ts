@@ -81,7 +81,10 @@ export async function executeBrowserHandler(options: BrowserRuntimeOptions): Pro
     const page = context.pages()[0] ?? await context.newPage();
     await page.goto(target);
     const reader = options.readFresh ?? domReader(page);
-    return await new PlaywrightAdapter(page, reader, options.clock).execute(handler, options);
+    // Only a local file fixture may use sub-production test timing. Every
+    // remote/hosted target receives production timing validation.
+    const fixtureMode = new URL(target).protocol === "file:" ? "fixture" : "production";
+    return await new PlaywrightAdapter(page, reader, options.clock, undefined, fixtureMode).execute(handler, options);
   } finally {
     await context?.close();
     await browser?.close();

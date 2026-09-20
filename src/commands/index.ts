@@ -5,12 +5,24 @@ import { browserRunCommand } from "./browser-run.js";
 import { daemonCommand } from "./daemon.js";
 import { importSnapshotCommand } from "./import-snapshot.js";
 import { knowledgeCommand } from "./knowledge.js";
+import { liveCommand } from "./live.js";
 import { prioritiesCommand } from "./priorities.js";
 import { statusCommand } from "./status.js";
 import { CommandRegistryBuilder } from "./builder.js";
 import type { Command } from "./types.js";
 
-const commands: readonly Command[] = [daemonCommand, statusCommand, importSnapshotCommand, knowledgeCommand, prioritiesCommand, browserCheckCommand, browserInspectCommand, browserRunCommand, backupCommand];
+const commands: readonly Command[] = [
+  daemonCommand,
+  statusCommand,
+  importSnapshotCommand,
+  knowledgeCommand,
+  prioritiesCommand,
+  browserCheckCommand,
+  browserInspectCommand,
+  browserRunCommand,
+  liveCommand,
+  backupCommand,
+];
 export function createCommandRegistry(items: readonly Command[] = commands): Map<string, Command> {
   const builder = new CommandRegistryBuilder();
   for (const command of items) builder.add(command);

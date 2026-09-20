@@ -1,19 +1,19 @@
-FROM node:24-alpine AS build
+FROM oven/bun:1.4.2 AS build
 WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm ci
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
 COPY tsconfig.json ./
 COPY src ./src
-RUN npm run build && npm prune --omit=dev
+RUN bun run build
 
-FROM node:24-alpine
+FROM oven/bun:1.4.2
 WORKDIR /app
 ENV NODE_ENV=production GODVILLE_DATA_DIR=/data
-COPY --from=build /app/package.json ./
-COPY --from=build /app/node_modules ./node_modules
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile --production
 COPY --from=build /app/dist ./dist
-RUN addgroup -S agent && adduser -S agent -G agent && mkdir /data && chown agent:agent /data
-USER agent
+RUN mkdir /data && chown bun:bun /data
+USER bun
 VOLUME ["/data"]
-ENTRYPOINT ["node", "dist/cli.js"]
+ENTRYPOINT ["bun", "dist/cli.js"]
 CMD ["daemon", "--once"]
