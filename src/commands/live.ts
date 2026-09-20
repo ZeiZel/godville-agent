@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createLiveGodvilleAdapter } from "../live-godville-adapter.js";
-import { parseLivePolicy, planLivePolicy } from "../live-policy.js";
-import { livePolicyFingerprint, runSequence } from "../live-runner.js";
+import { parseLivePolicy } from "../live-policy.js";
+import { livePolicyFingerprint, planLivePolicyForRun, runSequence } from "../live-runner.js";
 import { CommandBuilder } from "./builder.js";
 import { UsageError, type Command, type CommandContext } from "./types.js";
 import { reconcileLiveLifecycle } from "../live-lifecycle.js";
@@ -98,7 +98,7 @@ async function runLive(
   };
   initial = await enrichProgression(initial);
   if (dryRun) {
-    const sequence = planLivePolicy(policy, initial);
+    const sequence = planLivePolicyForRun(policy, initial, db);
     const result = await runSequence(adapter, db, config.budget, policy, sequence, true, {
       canIssueClick: () => false,
     });
@@ -129,7 +129,7 @@ async function runLive(
           if (needsObservation) { observation = await stableObservation(context, adapter); needsObservation = false; }
           observation = await enrichProgression(observation);
           reconcileLiveLifecycle(db, observation, config.api.godName);
-          const sequence = planLivePolicy(policy, observation);
+          const sequence = planLivePolicyForRun(policy, observation, db);
           if (db.isCooldownActive("zpg-active", new Date()) || db.hasUnresolvedOperation("arena.zpg.start")) {
             print({ event: "live_wait", initial: observation, reason: "persistent ZPG intervention lock is active; awaiting verified terminal reconciliation" });
             if (!once && !stopped) { await waitForNextLiveCycle(3_000 + Math.floor(Math.random() * 2_001), () => stopped); needsObservation = true; }
@@ -176,7 +176,7 @@ export const liveCommand: Command = new CommandBuilder()
     }
 
     const policy = readPolicy(context);
-    const sequence = planLivePolicy(policy, observation);
+    const sequence = planLivePolicyForRun(policy, observation, context.db);
     if (verb === "plan") {
       context.print({ event: "live_plan", policySha256: livePolicyFingerprint(policy), observation, sequence });
       return;

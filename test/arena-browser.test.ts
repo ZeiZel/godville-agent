@@ -1,0 +1,28 @@
+import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import test from "node:test";
+import { chromium, type Browser, type Page } from "playwright";
+import { createLiveGodvilleAdapter, type OrcaLiveExecutor } from "../src/live-godville-adapter.js";
+
+const pageId = "00000000-0000-4000-8000-000000000000";
+const chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const browserTest = existsSync(chrome) ? test : test.skip;
+const html = (o: { draft?: string; raceOnMove?: boolean } = {}) => `<!doctype html><html><body>
+<div id="hero_block"></div><div id="stats"></div><div id="m_info"><div id="hk_health">Здоровье 400 / 500</div></div><div id="o_info"><div id="o_hl1">100 / 500</div></div>
+<div id="m_fight_log"><div class="block_title">Вести с арены (шаг 1)</div><div class="d_line">аренные жрецы постараются не дать богам распаковать больше трех пранозарядов</div></div>
+<div id="m_control"><div class="gp_val">80%</div><div class="acc_val">200</div><form id="god_voice_form"><textarea id="godvoice" class="input_text">${o.draft ?? ""}</textarea><input id="voice_submit" type="button" value="Глас"></form></div><a id="fbclink" href="/duels/log/syntheticarena"></a><div id="v2l" style="display:none"></div><div id="control"></div>
+<script>(()=>{let prana=80,turn=1,moves=0;const h=document.querySelector('#m_fight_log .block_title'),v=document.querySelector('#godvoice'),s=document.querySelector('#voice_submit'),r=document.querySelector('#v2l');const u=()=>{document.querySelector('#m_control .gp_val').textContent=prana+'%';h.textContent='Вести с арены (шаг '+turn+')'};s.addEventListener('click',()=>{prana=75;r.textContent='Голос принят';r.style.display='block';u()});document.addEventListener('mousemove',()=>{moves++;if(${o.raceOnMove === true}&&moves===1){turn=2;u()}},true);window.__fixtureState={get moves(){return moves},get clicked(){return prana===75},advanceTurn(){turn=2;u()}}})()</script></body></html>`;
+
+async function fixture(o: { draft?: string; raceOnMove?: boolean } = {}): Promise<{ browser: Browser; page: Page; executor: OrcaLiveExecutor; clock: { now: () => Date; wait: (ms: number) => Promise<void> } }> {
+  const browser = await chromium.launch({ executablePath: chrome, headless: true }); const context = await browser.newContext(); const page = await context.newPage();
+  await page.route("https://godville.net/superhero", (route) => route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: html(o) })); await page.goto("https://godville.net/superhero");
+  let now = Date.UTC(2026, 0, 1);
+  const executor: OrcaLiveExecutor = async (_command, args) => { if (args[0] === "eval") { const source = args[args.indexOf("--expression") + 1]!; const value = await page.evaluate((code) => (0, eval)(code), source); return { stdout: JSON.stringify({ ok: true, result: { result: typeof value === "string" ? value : JSON.stringify(value) } }) }; } if (args[0] === "mouse") { const x = Number(args[args.indexOf("--x") + 1]), y = Number(args[args.indexOf("--y") + 1]); if (args[1] === "move") await page.mouse.move(x, y); else if (args[1] === "down") await page.mouse.down(); else await page.mouse.up(); return { stdout: JSON.stringify({ ok: true }) }; } return { stdout: JSON.stringify({ ok: true }) }; };
+  return { browser, page, executor, clock: { random: () => 0.5, now: () => new Date(now), wait: async (ms: number) => { now += ms; } } };
+}
+const makeAdapter = (f: Awaited<ReturnType<typeof fixture>>) => createLiveGodvilleAdapter({ pageId, heroId: "arena-hero", executor: f.executor, clock: f.clock, fixtureMode: true, jigglerConfig: { reactionDelayMs: [0, 0], betweenActionsMs: [0, 0], clickOffsetPx: 1, clickJigglePx: 0 } });
+
+browserTest("real DOM voice preserves a nonempty user draft", async () => { const f = await fixture({ draft: "Моя команда" }); try { const r = await makeAdapter(f).execute("arena.voice.heal", { beforeClick: async () => true }); assert.equal(r.state, "SKIPPED"); assert.equal(await f.page.locator("#godvoice").inputValue(), "Моя команда"); } finally { await f.browser.close(); } });
+browserTest("real DOM accepted receipt and five-prana debit confirm voice", async () => { const f = await fixture(); try { const r = await makeAdapter(f).execute("arena.voice.heal", { beforeClick: async () => true }); assert.equal(r.state, "CONFIRMED", r.reason); assert.match(r.reason, /accepted voice receipt/); } finally { await f.browser.close(); } });
+browserTest("real DOM turn change after the journal gate blocks physical click and clears only its own phrase", async () => { const f = await fixture(); try { const r = await makeAdapter(f).execute("arena.voice.heal", { beforeClick: async () => { await f.page.evaluate(() => (window as unknown as { __fixtureState: { advanceTurn: () => void } }).__fixtureState.advanceTurn()); return true; } }); assert.equal(r.state, "SKIPPED"); assert.match(r.reason, /turn|phrase/i); assert.equal(await f.page.locator("#godvoice").inputValue(), ""); assert.equal(await f.page.evaluate(() => (window as unknown as { __fixtureState: { clicked: boolean } }).__fixtureState.clicked), false); const next = await makeAdapter(f).execute("arena.voice.heal", { beforeClick: async () => true }); assert.equal(next.state, "CONFIRMED", next.reason); } finally { await f.browser.close(); } });
+browserTest("real DOM debit without a positive receipt stays ambiguous", async () => { const f = await fixture(); await f.page.addStyleTag({ content: "#v2l { display:none !important }" }); try { const r = await makeAdapter(f).execute("arena.voice.heal", { beforeClick: async () => true }); assert.equal(r.state, "AMBIGUOUS"); assert.equal(r.confirmed, false); } finally { await f.browser.close(); } });

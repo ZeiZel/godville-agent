@@ -37,6 +37,7 @@ export interface ObservationV1 {
   health: Health;
   /** Exact observed health percentage, separate from the coarse health classification. */
   healthPercent?: number;
+  opponentHealthPercent?: number;
   cooldowns: Record<string, string>;
   rawShape: string[];
 }
