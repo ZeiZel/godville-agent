@@ -18,6 +18,7 @@ export function loadConfig(env = process.env): RuntimeConfig {
   const reserveCharges = intEnv(env, "GODVILLE_RESERVE_CHARGES", DEFAULT_BUDGET.reserveCharges);
   const tokenFile = env.GODVILLE_TOKEN_FILE;
   const manifestFile = env.GODVILLE_BROWSER_MANIFEST;
+  const stateDir = env.GODVILLE_BROWSER_STATE_DIR;
   return {
     dataDir,
     mode,
@@ -29,7 +30,13 @@ export function loadConfig(env = process.env): RuntimeConfig {
       maxChargesPerExpedition: intEnv(env, "GODVILLE_MAX_CHARGES_PER_EXPEDITION", DEFAULT_BUDGET.maxChargesPerExpedition),
     },
     zpg: { enabled: env.GODVILLE_ZPG_ENABLED === "true", confirmation: env.GODVILLE_ZPG_CONFIRMATION === "true", minOffsetSeconds: intEnv(env, "GODVILLE_ZPG_MIN_OFFSET_SECONDS", 10), maxOffsetSeconds: intEnv(env, "GODVILLE_ZPG_MAX_OFFSET_SECONDS", 60) },
-    browser: { enabled: browserEnabled, ...(manifestFile ? { manifestFile } : {}) },
+    browser: {
+      enabled: browserEnabled,
+      ...(manifestFile ? { manifestFile } : {}),
+      ...(stateDir ? { stateDir: resolve(stateDir) } : {}),
+      headless: env.GODVILLE_BROWSER_HEADLESS !== "false",
+      allowRemoteUrl: env.GODVILLE_BROWSER_ALLOW_REMOTE === "true",
+    },
   };
 }
 

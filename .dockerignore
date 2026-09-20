@@ -7,4 +7,5 @@ logs
 .git
 .env
 .env.*
+!.env.example
 docs/specs/godville-agent/06-aizel-plan.md

@@ -54,5 +54,5 @@ export interface RuntimeConfig {
   api?: { godName: string; tokenFile?: string; intervalSeconds: number };
   budget: BudgetPolicy;
   zpg: { enabled: boolean; confirmation: boolean; minOffsetSeconds: number; maxOffsetSeconds: number };
-  browser: { enabled: boolean; manifestFile?: string };
+  browser: { enabled: boolean; manifestFile?: string; stateDir?: string; headless: boolean; allowRemoteUrl: boolean };
 }
