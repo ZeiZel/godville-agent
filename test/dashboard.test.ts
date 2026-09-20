@@ -42,8 +42,13 @@ test("dashboard reports stale and tolerates malformed or absent files", () => {
   const status = readDashboardStatus({ dataDir: dir, now: () => new Date("2026-09-20T12:00:00.000Z") });
   expect(status.freshness).toBe("unknown");
   expect(status.cycles).toEqual([]);
-  writeFileSync(join(dir, "godville.sqlite"), "not sqlite");
-  expect(readDashboardStatus({ dataDir: dir, now: () => new Date() }).freshness).toBe("unknown");
+  const db = new AgentDatabase(dir);
+  db.saveObservation({ version: "observation/v1", observedAt: "2026-09-20T11:56:00.000Z", sourceVersion: "test", freshness: "fresh", mode: "idle", capabilities: [], progressionKnown: false, health: "unknown", cooldowns: {}, rawShape: [] }, "test");
+  db.close();
+  expect(readDashboardStatus({ dataDir: dir, now: () => new Date("2026-09-20T12:00:00.000Z") }).freshness).toBe("stale");
+  const badDir = mkdtempSync(join(tmpdir(), "godville-dashboard-bad-"));
+  writeFileSync(join(badDir, "godville.sqlite"), "not sqlite");
+  expect(readDashboardStatus({ dataDir: badDir, now: () => new Date() }).freshness).toBe("unknown");
 });
 
 test("dashboard serves read-only routes and rejects hostile hosts", async () => {
