@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createLiveGodvilleAdapter, GODVILLE_ENCOURAGE_HOVER_EXPRESSION, GODVILLE_ENCOURAGE_TARGET_EXPRESSION, GODVILLE_OBSERVE_EXPRESSION, NORMAL_FIELD_HEADING_PATTERN, type OrcaLiveExecutor } from "../src/live-godville-adapter.js";
+import { createLiveGodvilleAdapter, GODVILLE_ARENA_CONFIRM_ARM_EXPRESSION, GODVILLE_ARENA_CONFIRM_RESTORE_EXPRESSION, GODVILLE_DUNGEON_HOVER_EXPRESSION, GODVILLE_DUNGEON_TARGET_EXPRESSION, GODVILLE_ENCOURAGE_HOVER_EXPRESSION, GODVILLE_ENCOURAGE_TARGET_EXPRESSION, GODVILLE_FIELD_STATE_EXPRESSION, GODVILLE_OBSERVE_EXPRESSION, GODVILLE_POLYGON_CONFIRM_ARM_EXPRESSION, GODVILLE_POLYGON_CONFIRM_RESTORE_EXPRESSION, GODVILLE_RESTORE_PRANA_HOVER_EXPRESSION, GODVILLE_RESTORE_PRANA_TARGET_EXPRESSION, NORMAL_FIELD_HEADING_PATTERN, type OrcaLiveExecutor } from "../src/live-godville-adapter.js";
 import { readFileSync } from "node:fs";
 
 const pageId = "00000000-0000-4000-8000-000000000000";
 const nested = (value: unknown): string => JSON.stringify({ ok: true, result: { result: JSON.stringify(value) } });
-const snapshot = (overrides: Record<string, unknown> = {}): string => nested({ origin: "https://godville.net", path: "/superhero", ready: true, health: [400, 500], pranaPercent: 80, charges: 200, fieldMode: true, diaryFingerprint: 1, ...overrides });
+const snapshot = (overrides: Record<string, unknown> = {}): string => nested({ origin: "https://godville.net", path: "/superhero", ready: true, health: [400, 500], pranaPercent: 80, charges: 200, fieldMode: true, dungeonMode: false, dungeonWaiting: false, dungeonActive: false, dungeonCombat: false, dungeonTurn: null, dungeonAvailable: false, diaryFingerprint: 1, ...overrides });
 function clock() { let now = Date.UTC(2026, 0, 1); return { random: () => 0.5, now: () => new Date(now), wait: async (ms: number) => { now += ms; } }; }
 
 test("live observation parses only the fixed Godville DOM contract", async () => {
-  const executor: OrcaLiveExecutor = async (_command, args) => { assert.equal(args[0], "eval"); return { stdout: snapshot() }; };
+  const executor: OrcaLiveExecutor = async (_command, args) => { assert.equal(args[0], "eval"); return { stdout: args.includes(GODVILLE_FIELD_STATE_EXPRESSION) ? nested({ idle: true }) : snapshot() }; };
   const adapter = createLiveGodvilleAdapter({ pageId, heroId: "synthetic-hero", executor, clock: clock(), fixtureMode: true });
   const observation = await adapter.observe();
   assert.equal(observation.mode, "idle");
@@ -29,7 +29,7 @@ test("synthetic live DOM headings each identify normal field mode independently"
 });
 
 test("every fixed DOM expression is syntactically valid without evaluating page APIs", () => {
-  for (const expression of [GODVILLE_OBSERVE_EXPRESSION, GODVILLE_ENCOURAGE_TARGET_EXPRESSION, GODVILLE_ENCOURAGE_HOVER_EXPRESSION]) {
+  for (const expression of [GODVILLE_OBSERVE_EXPRESSION, GODVILLE_ENCOURAGE_TARGET_EXPRESSION, GODVILLE_ENCOURAGE_HOVER_EXPRESSION, GODVILLE_RESTORE_PRANA_TARGET_EXPRESSION, GODVILLE_RESTORE_PRANA_HOVER_EXPRESSION, GODVILLE_DUNGEON_TARGET_EXPRESSION, GODVILLE_DUNGEON_HOVER_EXPRESSION, GODVILLE_FIELD_STATE_EXPRESSION, GODVILLE_POLYGON_CONFIRM_ARM_EXPRESSION, GODVILLE_POLYGON_CONFIRM_RESTORE_EXPRESSION, GODVILLE_ARENA_CONFIRM_ARM_EXPRESSION, GODVILLE_ARENA_CONFIRM_RESTORE_EXPRESSION]) {
     assert.doesNotThrow(() => new Function(`return ${expression}`));
   }
 });
@@ -46,6 +46,7 @@ test("execution requires final hit test and a journal gate before exactly one do
     if (args[0] === "eval") {
       const expression = args[args.indexOf("--expression") + 1]!;
       if (expression === GODVILLE_OBSERVE_EXPRESSION) return { stdout: snapshot() };
+      if (expression === GODVILLE_FIELD_STATE_EXPRESSION) return { stdout: nested({ idle: true }) };
       if (expression === GODVILLE_ENCOURAGE_TARGET_EXPRESSION) return { stdout: nested({ ready: true, x: 10, y: 20, width: 100, height: 30 }) };
       if (expression === GODVILLE_ENCOURAGE_HOVER_EXPRESSION) return { stdout: nested({ ready: true }) };
     }
@@ -68,6 +69,7 @@ test("unknown DOM and denied journal cannot click", async () => {
     if (args[0] !== "eval") return { stdout: JSON.stringify({ ok: true }) };
     const expression = args[args.indexOf("--expression") + 1]!;
     if (expression === GODVILLE_OBSERVE_EXPRESSION) return { stdout: snapshot() };
+    if (expression === GODVILLE_FIELD_STATE_EXPRESSION) return { stdout: nested({ idle: true }) };
     if (expression === GODVILLE_ENCOURAGE_TARGET_EXPRESSION) return { stdout: nested({ ready: true, x: 10, y: 20, width: 100, height: 30 }) };
     return { stdout: nested({ ready: true }) };
   };

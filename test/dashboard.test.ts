@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { AgentDatabase } from "../src/database.js";
 import { createDashboardServer, readDashboardStatus } from "../src/dashboard.js";
+import { DASHBOARD_HTML } from "../src/dashboard-page.js";
 
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), "godville-dashboard-"));
@@ -35,6 +36,14 @@ test("dashboard status is bounded, projects audit rows, and derives freshness", 
   expect(status.logCycles[0]).toMatchObject({ event: "live_run", at: now.toISOString(), state: "SKIPPED", reason: "no executable rule matched" });
   expect(status.logCycles[0]?.action).toBeUndefined();
   expect(status.logs.stderr.join(" ")).not.toContain("/Users/private");
+});
+
+test("dashboard names live gameplay modes, actions, and dungeon reasons in Russian", () => {
+  for (const label of [
+    "Обычная жизнь героя", "Ожидание группы", "Полигон", "Возраст heartbeat", "Нет подходящего действия по текущим правилам", "Восстановление праны", "Запуск ZPG-арены",
+    "Вход в подземелье", "Автоматический ход в подземелье", "Запуск полигона", "Отправка в плавание",
+    "К ближайшему подтверждённому сокровищу найден безопасный путь.",
+  ]) expect(DASHBOARD_HTML).toContain(label);
 });
 
 test("dashboard reports stale and tolerates malformed or absent files", () => {

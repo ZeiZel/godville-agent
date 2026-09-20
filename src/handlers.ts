@@ -29,7 +29,7 @@ const isString = (value: unknown): value is string => typeof value === "string";
 const isInteger = (value: unknown): value is number => typeof value === "number" && Number.isInteger(value);
 const isPrimitive = (value: unknown): value is Primitive => typeof value === "string" || typeof value === "number" || typeof value === "boolean";
 const only = (record: UnknownRecord, allowed: readonly string[]): boolean => Object.keys(record).every((key) => allowed.includes(key));
-const knownModes = new Set<Mode>(["idle", "arena", "dungeon", "sailing", "raid_boss", "personal_boss", "polygon", "shop", "unknown"]);
+const knownModes = new Set<Mode>(["idle", "arena", "adventure_queue", "dungeon", "sailing", "raid_boss", "personal_boss", "polygon", "shop", "unknown"]);
 const validText = (value: unknown): value is string => isString(value) && value.trim().length > 0 && value.length <= 160;
 function validUrl(value: unknown): boolean { if (!isString(value)) return false; try { return new URL(value).protocol === "https:"; } catch { return false; } }
 const validDate = (value: unknown): value is string => isString(value) && !Number.isNaN(Date.parse(value));

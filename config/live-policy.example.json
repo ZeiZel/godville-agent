@@ -10,9 +10,79 @@
       "sequence": []
     },
     {
-      "id": "encourage-when-risk-observed",
+      "id": "restore-before-zpg-hour",
       "safety": "normal",
-      "priority": 100,
+      "priority": 998,
+      "weight": 100,
+      "when": [
+        { "field": "freshness", "compare": "equals", "value": "fresh" },
+        { "field": "mode", "compare": "equals", "value": "idle" },
+        { "field": "readiness.arena.reserve", "compare": "equals", "value": true },
+        { "field": "prana.current", "compare": "lte", "value": 49 },
+        { "field": "charges.current", "compare": "gte", "value": 101 }
+      ],
+      "sequence": ["hero.restore_prana"]
+    },
+    {
+      "id": "restore-for-zpg-window",
+      "safety": "normal",
+      "priority": 999,
+      "weight": 100,
+      "when": [
+        { "field": "freshness", "compare": "equals", "value": "fresh" },
+        { "field": "mode", "compare": "equals", "value": "idle" },
+        { "field": "readiness.zpg", "compare": "equals", "value": true },
+        { "field": "prana.current", "compare": "lte", "value": 49 },
+        { "field": "charges.current", "compare": "gte", "value": 101 }
+      ],
+      "sequence": ["hero.restore_prana"]
+    },
+    {
+      "id": "zpg-opening-window",
+      "safety": "normal",
+      "priority": 1000,
+      "weight": 100,
+      "when": [
+        { "field": "freshness", "compare": "equals", "value": "fresh" },
+        { "field": "mode", "compare": "equals", "value": "idle" },
+        { "field": "readiness.zpg", "compare": "equals", "value": true },
+        { "field": "prana.current", "compare": "gte", "value": 50 }
+      ],
+      "sequence": ["arena.zpg.start"]
+    },
+    {
+      "id": "restore-for-qualified-polygon",
+      "safety": "normal",
+      "priority": 300,
+      "weight": 100,
+      "when": [
+        { "field": "freshness", "compare": "equals", "value": "fresh" },
+        { "field": "mode", "compare": "equals", "value": "idle" },
+        { "field": "readiness.polygon", "compare": "equals", "value": true },
+        { "field": "readiness.arena.reserve", "compare": "equals", "value": false },
+        { "field": "prana.current", "compare": "lte", "value": 49 },
+        { "field": "charges.current", "compare": "gte", "value": 101 }
+      ],
+      "sequence": ["hero.restore_prana"]
+    },
+    {
+      "id": "start-ready-polygon",
+      "safety": "normal",
+      "priority": 200,
+      "weight": 100,
+      "when": [
+        { "field": "freshness", "compare": "equals", "value": "fresh" },
+        { "field": "mode", "compare": "equals", "value": "idle" },
+        { "field": "readiness.polygon", "compare": "equals", "value": true },
+        { "field": "readiness.arena.reserve", "compare": "equals", "value": false },
+        { "field": "prana.current", "compare": "gte", "value": 80 }
+      ],
+      "sequence": ["adventure.polygon.start"]
+    },
+    {
+      "id": "emergency-field-heal",
+      "safety": "normal",
+      "priority": 450,
       "weight": 100,
       "when": [
         { "field": "freshness", "compare": "equals", "value": "fresh" },
@@ -23,12 +93,73 @@
       "sequence": ["hero.encourage"]
     },
     {
-      "id": "expedition-observe-only",
+      "id": "critical-active-dungeon-heal",
       "safety": "normal",
-      "priority": 20,
-      "weight": 10,
-      "when": [{ "field": "readiness.expedition", "compare": "equals", "value": true }],
-      "sequence": []
+      "priority": 500,
+      "weight": 100,
+      "when": [
+        { "field": "freshness", "compare": "equals", "value": "fresh" },
+        { "field": "mode", "compare": "equals", "value": "dungeon" },
+        { "field": "health.percent", "compare": "lte", "value": 45 },
+        { "field": "prana.current", "compare": "gte", "value": 25 }
+      ],
+      "sequence": ["hero.encourage"]
+    },
+    {
+      "id": "safe-active-polygon-push",
+      "safety": "normal",
+      "priority": 400,
+      "weight": 100,
+      "when": [
+        { "field": "freshness", "compare": "equals", "value": "fresh" },
+        { "field": "mode", "compare": "equals", "value": "polygon" },
+        { "field": "prana.current", "compare": "gte", "value": 15 }
+      ],
+      "sequence": ["polygon.move.safe"]
+    },
+    {
+      "id": "safe-active-dungeon-navigation",
+      "safety": "normal",
+      "priority": 400,
+      "weight": 100,
+      "when": [
+        { "field": "freshness", "compare": "equals", "value": "fresh" },
+        { "field": "mode", "compare": "equals", "value": "dungeon" },
+        { "field": "readiness.dungeon.navigation", "compare": "equals", "value": true },
+        { "field": "prana.current", "compare": "gte", "value": 30 }
+      ],
+      "sequence": ["dungeon.move.auto"]
+    },
+    {
+      "id": "restore-for-qualified-dungeon",
+      "safety": "normal",
+      "priority": 300,
+      "weight": 100,
+      "when": [
+        { "field": "freshness", "compare": "equals", "value": "fresh" },
+        { "field": "mode", "compare": "equals", "value": "idle" },
+        { "field": "health.percent", "compare": "gte", "value": 60 },
+        { "field": "prana.current", "compare": "lte", "value": 49 },
+        { "field": "charges.current", "compare": "gte", "value": 101 },
+        { "field": "readiness.arena.reserve", "compare": "equals", "value": false },
+        { "field": "readiness.dungeon", "compare": "equals", "value": true }
+      ],
+      "sequence": ["hero.restore_prana"]
+    },
+    {
+      "id": "start-qualified-dungeon",
+      "safety": "normal",
+      "priority": 200,
+      "weight": 100,
+      "when": [
+        { "field": "freshness", "compare": "equals", "value": "fresh" },
+        { "field": "mode", "compare": "equals", "value": "idle" },
+        { "field": "health.percent", "compare": "gte", "value": 60 },
+        { "field": "prana.current", "compare": "gte", "value": 75 },
+        { "field": "readiness.arena.reserve", "compare": "equals", "value": false },
+        { "field": "readiness.dungeon", "compare": "equals", "value": true }
+      ],
+      "sequence": ["adventure.dungeon.start"]
     },
     {
       "id": "zpg-observe-only-when-unknown",

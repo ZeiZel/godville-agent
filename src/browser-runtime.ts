@@ -44,7 +44,7 @@ export function parseAgentObservation(source: string): ObservationV1 {
   try { value = JSON.parse(source); } catch { throw new Error("data-agent-observation is not JSON"); }
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("data-agent-observation must be an object");
   const record = value as Record<string, unknown>;
-  const allowedModes = new Set(["idle", "arena", "dungeon", "sailing", "raid_boss", "personal_boss", "polygon", "shop", "unknown"]);
+  const allowedModes = new Set(["idle", "arena", "adventure_queue", "dungeon", "sailing", "raid_boss", "personal_boss", "polygon", "shop", "unknown"]);
   const allowedFreshness = new Set(["fresh", "stale", "expired", "auth_degraded"]);
   const allowedHealth = new Set(["known_safe", "known_risk", "unknown"]);
   if (record.version !== OBSERVATION_VERSION || typeof record.observedAt !== "string" || Number.isNaN(Date.parse(record.observedAt)) || typeof record.sourceVersion !== "string" || !allowedFreshness.has(String(record.freshness)) || !allowedModes.has(String(record.mode)) || !stringArray(record.capabilities) || typeof record.progressionKnown !== "boolean" || !allowedHealth.has(String(record.health)) || !isStringRecord(record.cooldowns) || !stringArray(record.rawShape)) throw new Error("data-agent-observation has an unknown schema");

@@ -30,7 +30,7 @@ export function loadConfig(env = process.env): RuntimeConfig {
       maxChargesPerRolling7d: intEnv(env, "GODVILLE_MAX_CHARGES_PER_7D", DEFAULT_BUDGET.maxChargesPerRolling7d),
       maxChargesPerExpedition: intEnv(env, "GODVILLE_MAX_CHARGES_PER_EXPEDITION", DEFAULT_BUDGET.maxChargesPerExpedition),
     },
-    zpg: { enabled: env.GODVILLE_ZPG_ENABLED === "true", confirmation: env.GODVILLE_ZPG_CONFIRMATION === "true", minOffsetSeconds: intEnv(env, "GODVILLE_ZPG_MIN_OFFSET_SECONDS", 10), maxOffsetSeconds: intEnv(env, "GODVILLE_ZPG_MAX_OFFSET_SECONDS", 60) },
+    zpg: { enabled: env.GODVILLE_ZPG_ENABLED === "true", confirmation: env.GODVILLE_ZPG_CONFIRMATION === "true", minOffsetSeconds: intEnv(env, "GODVILLE_ZPG_MIN_OFFSET_SECONDS", 5), maxOffsetSeconds: intEnv(env, "GODVILLE_ZPG_MAX_OFFSET_SECONDS", 160) },
     ...(livePolicyFile ? { livePolicyFile: resolve(livePolicyFile) } : {}),
     browser: {
       enabled: browserEnabled,
