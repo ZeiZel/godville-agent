@@ -116,16 +116,18 @@ function observationFrom(value: unknown): DashboardObservation | undefined {
 
 function statusFromObservation(observation: DashboardObservation | undefined, now: Date): "fresh" | "stale" | "unknown" {
   if (!observation?.observedAt) return "unknown";
+  if (observation.freshness === "stale" || observation.freshness === "expired") return "stale";
+  if (observation.freshness === "unknown" || observation.freshness === "auth_degraded") return "unknown";
   const at = Date.parse(observation.observedAt);
   if (!Number.isFinite(at)) return "unknown";
   const age = now.getTime() - at;
-  if (age < 0 || age > 24 * 60 * 60 * 1000) return "unknown";
+  if (age < 0) return "unknown";
   return age <= 180_000 ? "fresh" : "stale";
 }
 
 export function readDashboardStatus(options: DashboardOptions): DashboardStatus {
   const now = (options.now ?? (() => new Date()))();
-  const reserveCharges = options.reserveCharges ?? DEFAULT_RESERVE;
+  const reserveCharges = Math.max(DEFAULT_RESERVE, options.reserveCharges ?? DEFAULT_RESERVE);
   const result: DashboardStatus = {
     generatedAt: now.toISOString(), freshness: "unknown", identity: {},
     resources: { reserveCharges }, counts: { confirmed: 0, ambiguous: 0 }, operations: [], cycles: [],
