@@ -6,6 +6,7 @@ browser-state/
 logs/
 .env
 .env.*
+!.env.example
 *.sqlite
 *.sqlite-*
 coverage/

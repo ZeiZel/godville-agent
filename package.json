@@ -10,8 +10,8 @@
     "build": "tsc -p tsconfig.json",
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "tsx --test test/**/*.test.ts",
-    "start": "node dist/cli.js",
-    "dev": "tsx src/cli.ts"
+    "start": "node --env-file-if-exists=.env dist/cli.js",
+    "dev": "node --env-file-if-exists=.env --import tsx src/cli.ts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
