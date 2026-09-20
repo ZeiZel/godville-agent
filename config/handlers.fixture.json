@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "handler-catalog/v1",
+  "enabled": true,
+  "handlers": [{
+    "schemaVersion": "handler/v1", "handler": "fixture.confirm", "version": 1,
+    "priority": 1, "enabled": true, "reviewedSourceURL": "https://example.test/fixture",
+    "verifiedAt": "2026-09-20T00:00:00.000Z", "match": {"role": "button", "text": "UNVERIFIED ZPG BUTTON TEXT"},
+    "scope": {"modes": ["idle"], "requiredMarkers": ["zpg-arena"]},
+    "precondition": {"kind": "equals", "field": "mode", "value": "idle"},
+    "cost": {"maxPrana": 0, "maxCharges": 0},
+    "action": {"reactionDelayMs": [1, 1], "clickOffsetPx": 1, "clickJigglePx": 0},
+    "postcondition": {"condition": {"kind": "equals", "field": "mode", "value": "arena"}, "timeoutMs": 1000, "pollIntervalMs": 25}
+  }]
+}

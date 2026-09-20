@@ -1,0 +1,19 @@
+services:
+  agent:
+    build: .
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    volumes:
+      - godville-data:/data
+      - ./secrets:/run/secrets:ro
+    environment:
+      GODVILLE_DATA_DIR: /data
+      GODVILLE_MODE: advisor
+    command: ["daemon", "--once"]
+volumes:
+  godville-data:
