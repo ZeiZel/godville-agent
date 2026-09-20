@@ -91,3 +91,13 @@ test("an ambiguous handler blocks a later event intent until manual reconciliati
     assert.equal(db.hasUnresolvedOperation("arena.zpg.start"), false);
   } finally { dispose(); }
 });
+
+test("missing Bun SQLite rows do not grant leases, cooldowns, or unresolved-operation blocks", () => {
+  const { db, dispose } = database();
+  try {
+    const now = at("2026-01-02T10:00:00.000Z");
+    assert.equal(db.hasLease("browser", "owner", 1, now), false);
+    assert.equal(db.isCooldownActive("zpg", now), false);
+    assert.equal(db.hasUnresolvedOperation("arena.zpg.start"), false);
+  } finally { dispose(); }
+});

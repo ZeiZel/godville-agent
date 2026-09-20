@@ -19,6 +19,7 @@ export function loadConfig(env = process.env): RuntimeConfig {
   const tokenFile = env.GODVILLE_TOKEN_FILE;
   const manifestFile = env.GODVILLE_BROWSER_MANIFEST;
   const stateDir = env.GODVILLE_BROWSER_STATE_DIR;
+  const livePolicyFile = env.GODVILLE_LIVE_POLICY_FILE;
   return {
     dataDir,
     mode,
@@ -30,6 +31,7 @@ export function loadConfig(env = process.env): RuntimeConfig {
       maxChargesPerExpedition: intEnv(env, "GODVILLE_MAX_CHARGES_PER_EXPEDITION", DEFAULT_BUDGET.maxChargesPerExpedition),
     },
     zpg: { enabled: env.GODVILLE_ZPG_ENABLED === "true", confirmation: env.GODVILLE_ZPG_CONFIRMATION === "true", minOffsetSeconds: intEnv(env, "GODVILLE_ZPG_MIN_OFFSET_SECONDS", 10), maxOffsetSeconds: intEnv(env, "GODVILLE_ZPG_MAX_OFFSET_SECONDS", 60) },
+    ...(livePolicyFile ? { livePolicyFile: resolve(livePolicyFile) } : {}),
     browser: {
       enabled: browserEnabled,
       ...(manifestFile ? { manifestFile } : {}),

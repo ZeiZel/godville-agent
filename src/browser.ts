@@ -1,5 +1,6 @@
 import type { ObservationV1 } from "./types.js";
 import { evaluateCondition, isHandlerEnabled, type Condition, type HandlerDefinition } from "./handlers.js";
+import { DEFAULT_JIGGLER_CONFIG, Jiggler, JigglerCancelledError, JigglerDeadlineError, type JigglerClock, type JigglerMode } from "./jiggler.js";
 
 export type { Condition, HandlerDefinition } from "./handlers.js";
 
@@ -27,11 +28,20 @@ export interface BrowserExecutionOptions {
   allowUnsafeTestClick?: true;
   onObservation?: (observation: ObservationV1, phase: "precheck" | "recheck" | "postcondition") => void | Promise<void>;
   onOutcome?: (outcome: ClickOutcome) => void | Promise<void>;
+  /** Cancels only before a click; a post-click outcome remains ambiguous until observed. */
+  signal?: AbortSignal;
 }
-export interface BrowserClock { random(): number; now(): Date; wait(milliseconds: number): Promise<void>; }
-const systemClock: BrowserClock = { random: Math.random, now: () => new Date(), wait: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)) };
-const bound = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
-const randomUnit = (random: () => number): number => bound(random(), 0, 0.999999999999);
+export type BrowserClock = JigglerClock;
+const systemClock: BrowserClock = {
+  random: Math.random, now: () => new Date(),
+  wait: (milliseconds, signal) => new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(new JigglerCancelledError()); return; }
+    const timer = setTimeout(done, milliseconds);
+    function done(): void { signal?.removeEventListener("abort", aborted); resolve(); }
+    function aborted(): void { clearTimeout(timer); signal?.removeEventListener("abort", aborted); reject(new JigglerCancelledError()); }
+    signal?.addEventListener("abort", aborted, { once: true });
+  }),
+};
 const skipped = (reason: string): ClickOutcome => ({ state: "SKIPPED", clicked: false, confirmed: false, ambiguous: false, reason });
 
 function isInScope(handler: HandlerDefinition, observation: ObservationV1): boolean {
@@ -52,6 +62,15 @@ function clickTimeout(handler: HandlerDefinition, now: Date): number | undefined
   const seconds = now.getUTCMinutes() * 60 + now.getUTCSeconds() + now.getUTCMilliseconds() / 1000;
   return Math.max(1, Math.floor((deadline.endSecond - deadline.safetyMarginMs / 1_000 - seconds) * 1_000));
 }
+function jigglerDeadline(handler: HandlerDefinition, now: Date): Date | undefined {
+  const deadline = handler.scope.deadline;
+  if (!deadline) return undefined;
+  const result = new Date(now);
+  result.setUTCMinutes(0, 0, 0);
+  result.setUTCSeconds(deadline.endSecond);
+  result.setTime(result.getTime() - deadline.safetyMarginMs);
+  return result;
+}
 function hasKnownCost(handler: HandlerDefinition, observation: ObservationV1): boolean {
   return handler.cost.maxPrana === 0 || (observation.prana !== undefined && observation.prana.current >= handler.cost.maxPrana);
 }
@@ -61,7 +80,11 @@ function hasKnownCost(handler: HandlerDefinition, observation: ObservationV1): b
  * never launches/logs in, retries a click, or changes to a second selector.
  */
 export class PlaywrightAdapter {
-  constructor(private readonly page: UiPage, private readonly readFresh: FreshReader, private readonly clock: BrowserClock = systemClock) {}
+  private readonly jiggler: Jiggler;
+  /** Fixture mode is explicit; production timing validation is the default. */
+  constructor(private readonly page: UiPage, private readonly readFresh: FreshReader, private readonly clock: BrowserClock = systemClock, jiggler?: Jiggler, mode: JigglerMode = "production") {
+    this.jiggler = jiggler ?? new Jiggler(clock, DEFAULT_JIGGLER_CONFIG, mode);
+  }
 
   private async observe(options: BrowserExecutionOptions, phase: "precheck" | "recheck" | "postcondition"): Promise<ObservationV1> {
     const observation = await this.readFresh();
@@ -76,18 +99,8 @@ export class PlaywrightAdapter {
     if (!(await element.isVisible()) || !(await element.isEnabled()) || !(await element.boundingBox())) return undefined;
     return element;
   }
-  private delay(handler: HandlerDefinition): number {
-    const [minimum, maximum] = handler.action.reactionDelayMs;
-    return minimum + Math.floor(randomUnit(this.clock.random) * (maximum - minimum + 1));
-  }
   private point(handler: HandlerDefinition, box: { x: number; y: number; width: number; height: number }): { x: number; y: number } | undefined {
-    const inset = Math.max(1, handler.action.clickOffsetPx + handler.action.clickJigglePx);
-    if (box.width <= inset * 2 || box.height <= inset * 2) return undefined;
-    const varied = (amount: number): number => (randomUnit(this.clock.random) * 2 - 1) * amount;
-    return {
-      x: bound(box.width / 2 + varied(handler.action.clickOffsetPx) + varied(handler.action.clickJigglePx), inset, box.width - inset),
-      y: bound(box.height / 2 + varied(handler.action.clickOffsetPx) + varied(handler.action.clickJigglePx), inset, box.height - inset),
-    };
+    return this.jiggler.point(box, { clickOffsetPx: handler.action.clickOffsetPx, clickJigglePx: handler.action.clickJigglePx });
   }
   private async finish(options: BrowserExecutionOptions, outcome: ClickOutcome): Promise<ClickOutcome> { await options.onOutcome?.(outcome); return outcome; }
 
@@ -99,7 +112,13 @@ export class PlaywrightAdapter {
     if (before.freshness !== "fresh" || !isInScope(handler, before) || !hasKnownCost(handler, before) || !evaluateCondition(handler.precondition, before, this.clock.now())) return this.finish(options, skipped("precondition or known cost failed on fresh UI"));
     if (!withinDeadline(handler, this.clock.now())) return this.finish(options, skipped("deadline safety margin has passed"));
     if (!(await this.exactActionable(handler))) return this.finish(options, skipped("exact visible enabled button/text match is not unique"));
-    await this.clock.wait(this.delay(handler));
+    const deadline = jigglerDeadline(handler, this.clock.now());
+    try { await this.jiggler.waitReaction({ ...(options.signal ? { signal: options.signal } : {}), ...(deadline ? { deadline } : {}) }, handler.action.reactionDelayMs); }
+    catch (error) {
+      if (error instanceof JigglerCancelledError) return this.finish(options, skipped("execution cancelled before click"));
+      if (error instanceof JigglerDeadlineError) return this.finish(options, skipped("reaction delay cannot complete before deadline safety margin"));
+      throw error;
+    }
 
     // Fresh observation plus fresh locator/actionability must both hold after the delay.
     const rechecked = await this.observe(options, "recheck");
@@ -112,12 +131,14 @@ export class PlaywrightAdapter {
     const point = this.point(handler, box);
     if (!point) return this.finish(options, skipped("target is too small for bounded click offset"));
     if (!withinDeadline(handler, this.clock.now())) return this.finish(options, skipped("deadline safety margin has passed before click"));
+    if (options.signal?.aborted) return this.finish(options, skipped("execution cancelled before journal gate"));
     if (options.beforeClick && !(await options.beforeClick({ handler, observation: rechecked }))) return this.finish(options, skipped("journal did not grant this intent"));
     let clickAttempted = false;
     try {
       // Playwright's Locator.click supplies its own actionability/overlay check;
       // mouse.move is only bounded pointer variation, never the click itself.
-      await this.page.mouse.move(box.x + point.x, box.y + point.y, { steps: 2 + Math.floor(randomUnit(this.clock.random) * 3) });
+      await this.page.mouse.move(box.x + point.x, box.y + point.y, { steps: 3 });
+      if (options.signal?.aborted) return this.finish(options, { state: "AMBIGUOUS", clicked: false, confirmed: false, ambiguous: true, reason: "execution cancelled after journal gate; do not retry" });
       if (!withinDeadline(handler, this.clock.now())) return this.finish(options, { state: "AMBIGUOUS", clicked: false, confirmed: false, ambiguous: true, reason: "journal gate passed but deadline elapsed before click; do not retry" });
       const timeout = clickTimeout(handler, this.clock.now());
       clickAttempted = true;

@@ -1,0 +1,10 @@
+{
+  "origin": "https://godville.net",
+  "path": "/superhero",
+  "ready": true,
+  "health": [400, 500],
+  "pranaPercent": 80,
+  "charges": 200,
+  "fieldMode": true,
+  "diaryFingerprint": 101
+}

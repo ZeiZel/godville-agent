@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "live-policy/v1",
+  "rules": [
+    {
+      "id": "block-unknown-mode",
+      "safety": "block",
+      "priority": 1000,
+      "weight": 1,
+      "when": [{ "field": "mode", "compare": "equals", "value": "unknown" }],
+      "sequence": []
+    },
+    {
+      "id": "encourage-when-risk-observed",
+      "safety": "normal",
+      "priority": 100,
+      "weight": 100,
+      "when": [
+        { "field": "freshness", "compare": "equals", "value": "fresh" },
+        { "field": "mode", "compare": "equals", "value": "idle" },
+        { "field": "health.percent", "compare": "lte", "value": 35 },
+        { "field": "prana.current", "compare": "gte", "value": 25 }
+      ],
+      "sequence": ["hero.encourage"]
+    },
+    {
+      "id": "expedition-observe-only",
+      "safety": "normal",
+      "priority": 20,
+      "weight": 10,
+      "when": [{ "field": "readiness.expedition", "compare": "equals", "value": true }],
+      "sequence": []
+    },
+    {
+      "id": "zpg-observe-only-when-unknown",
+      "safety": "normal",
+      "priority": 10,
+      "weight": 1,
+      "when": [{ "field": "readiness.zpg", "compare": "missing", "value": true }],
+      "sequence": []
+    }
+  ]
+}
