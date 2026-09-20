@@ -10,6 +10,67 @@
       "sequence": []
     },
     {
+      "id": "arena-finish-punish",
+      "safety": "normal",
+      "priority": 850,
+      "weight": 100,
+      "when": [
+        { "field": "freshness", "compare": "equals", "value": "fresh" },
+        { "field": "mode", "compare": "equals", "value": "arena" },
+        { "field": "readiness.arena.ordinary", "compare": "equals", "value": true },
+        { "field": "readiness.arena.influence", "compare": "equals", "value": true },
+        { "field": "health.percent", "compare": "gte", "value": 35 },
+        { "field": "opponent.health.percent", "compare": "lte", "value": 20 },
+        { "field": "prana.current", "compare": "gte", "value": 25 }
+      ],
+      "sequence": ["hero.punish"]
+    },
+    {
+      "id": "arena-heal-influence",
+      "safety": "normal",
+      "priority": 900,
+      "weight": 100,
+      "when": [
+        { "field": "freshness", "compare": "equals", "value": "fresh" },
+        { "field": "mode", "compare": "equals", "value": "arena" },
+        { "field": "readiness.arena.ordinary", "compare": "equals", "value": true },
+        { "field": "readiness.arena.influence", "compare": "equals", "value": true },
+        { "field": "health.percent", "compare": "lte", "value": 35 },
+        { "field": "prana.current", "compare": "gte", "value": 25 }
+      ],
+      "sequence": ["hero.encourage"]
+    },
+    {
+      "id": "arena-heal-voice",
+      "safety": "normal",
+      "priority": 800,
+      "weight": 100,
+      "when": [
+        { "field": "freshness", "compare": "equals", "value": "fresh" },
+        { "field": "mode", "compare": "equals", "value": "arena" },
+        { "field": "readiness.arena.ordinary", "compare": "equals", "value": true },
+        { "field": "readiness.arena.voice", "compare": "equals", "value": true },
+        { "field": "health.percent", "compare": "lte", "value": 50 },
+        { "field": "prana.current", "compare": "gte", "value": 5 }
+      ],
+      "sequence": ["arena.voice.heal"]
+    },
+    {
+      "id": "arena-attack-voice",
+      "safety": "normal",
+      "priority": 700,
+      "weight": 100,
+      "when": [
+        { "field": "freshness", "compare": "equals", "value": "fresh" },
+        { "field": "mode", "compare": "equals", "value": "arena" },
+        { "field": "readiness.arena.ordinary", "compare": "equals", "value": true },
+        { "field": "readiness.arena.voice", "compare": "equals", "value": true },
+        { "field": "health.percent", "compare": "gte", "value": 35 },
+        { "field": "prana.current", "compare": "gte", "value": 5 }
+      ],
+      "sequence": ["arena.voice.attack"]
+    },
+    {
       "id": "restore-before-zpg-hour",
       "safety": "normal",
       "priority": 998,

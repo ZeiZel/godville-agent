@@ -9,6 +9,7 @@ import {
 } from "./live-godville-adapter.js";
 import { planLivePolicy, type LivePolicy, type PlannedSequence } from "./live-policy.js";
 import type { BudgetPolicy, Decision, ObservationV1 } from "./types.js";
+import { claimArenaTurn, isArenaTurnClaimed, releaseArenaTurnForUnclicked, type ArenaTurnGroup } from "./arena-turn-ledger.js";
 
 /** Only reviewed adapter commands enter this map. Policy JSON can select, never define, commands. */
 export const REVIEWED_COMMANDS: ReadonlyMap<LiveCommandId, ReviewedLiveCommand> = new Map(
@@ -38,6 +39,17 @@ export function livePolicyFingerprint(policy: LivePolicy): string {
   return createHash("sha256").update(JSON.stringify(policy)).digest("hex");
 }
 
+/** Removes already-consumed ordinary-arena action groups before every replan. */
+export function planLivePolicyForRun(policy: LivePolicy, observation: ObservationV1, db: AgentDatabase): PlannedSequence {
+  const turn = arenaTurn(observation);
+  if (observation.mode !== "arena" || !observation.heroId || !observation.battleId || turn === undefined) return planLivePolicy(policy, observation);
+  const rules = policy.rules.filter((rule) => !rule.sequence.some((id) => {
+    const command = REVIEWED_COMMANDS.get(id as LiveCommandId), group = command && arenaTurnGroup(command);
+    return group !== undefined && isArenaTurnClaimed(db, observation.heroId!, observation.battleId!, turn, group);
+  }));
+  return planLivePolicy({ ...policy, rules }, observation);
+}
+
 function immutableCommandMatches(candidate: ReviewedLiveCommand, expected: ReviewedLiveCommand): boolean {
   // Older fixture adapters model only immutable costs; production adapters always
   // carry the reviewed mode list from LIVE_COMMANDS.
@@ -52,6 +64,16 @@ function immutableCommandMatches(candidate: ReviewedLiveCommand, expected: Revie
 function stableIdentity(observation: ObservationV1): observation is ObservationV1 & { heroId: string; eventId: string } {
   return typeof observation.heroId === "string" && observation.heroId.length > 0
     && typeof observation.eventId === "string" && observation.eventId.length > 0;
+}
+
+function arenaTurnGroup(command: ReviewedLiveCommand): ArenaTurnGroup | undefined {
+  return command.id === "hero.encourage" || command.id === "hero.punish" ? "influence"
+    : command.id === "arena.voice.heal" || command.id === "arena.voice.attack" ? "voice" : undefined;
+}
+function arenaTurn(observation: ObservationV1): number | undefined {
+  if (observation.mode !== "arena" || !observation.battleId || !observation.eventId) return undefined;
+  const match = observation.eventId.match(/^godville-arena-turn:\/duels\/log\/[a-z0-9]+:(\d+)$/i);
+  return match && Number.isSafeInteger(Number(match[1])) ? Number(match[1]) : undefined;
 }
 
 function auditedDecision(
@@ -104,6 +126,10 @@ export async function runSequence(
     if (fresh.freshness !== "fresh" || !command.allowedModes.includes(fresh.mode) || fresh.prana === undefined || fresh.prana.current < command.maxPrana || (command.maxCharges > 0 && (fresh.charges === undefined || fresh.charges < command.maxCharges + 100))) {
       return { state: "SKIPPED", completed, reason: "fresh observation does not satisfy fixed command cost" };
     }
+    if (fresh.mode === "arena" && arenaTurnGroup(command) && !fresh.rawShape.includes("arena-ordinary-three-charge")) {
+      return { state: "SKIPPED", completed, reason: "arena subtype is not positively verified as the reviewed ordinary three-charge condition" };
+    }
+    if (fresh.mode === "arena" && arenaTurnGroup(command) && (fresh.rawShape.includes("arena-frozen") || fresh.rawShape.includes("arena-terminal"))) return { state: "SKIPPED", completed, reason: "arena is frozen or terminal" };
 
     if (dryRun) {
       completed.push(commandId);
@@ -116,17 +142,22 @@ export async function runSequence(
 
     let operationId: string | undefined;
     let decisionId: string | undefined;
+    let claimedArena: { heroId: string; battleId: string; turn: number; group: ArenaTurnGroup } | undefined;
     let gateReason: string | undefined;
     const outcome = await adapter.execute(command.id, {
       beforeClick: async ({ command: finalCommand, observation: finalObservation }) => {
-        const finalPlan = planLivePolicy(policy, finalObservation);
+        const finalPlan = planLivePolicyForRun(policy, finalObservation, db);
         if (!guards.canIssueClick()) { gateReason = "browser writer lease or stop signal is unavailable"; return false; }
         if (command.id !== "arena.zpg.start" && db.isCooldownActive("zpg-active", new Date())) { gateReason = "persistent ZPG intervention lock suppresses other commands"; return false; }
         if (!immutableCommandMatches(finalCommand, command)) { gateReason = "adapter command metadata differs from the reviewed registry"; return false; }
         if (!stableIdentity(finalObservation) || finalObservation.heroId !== fresh.heroId || finalObservation.eventId !== fresh.eventId) { gateReason = "account identity or battle/turn event changed before the journal gate"; return false; }
         if (finalPlan.ruleId !== sequence.ruleId || finalPlan.commands[phaseIndex] !== command.id) { gateReason = "JSON policy changed before the journal gate"; return false; }
         if (finalObservation.freshness !== "fresh" || !command.allowedModes.includes(finalObservation.mode) || finalObservation.prana === undefined || finalObservation.prana.current < command.maxPrana || (command.maxCharges > 0 && (finalObservation.charges === undefined || finalObservation.charges < command.maxCharges + 100))) { gateReason = "final resources or mode no longer satisfy this command"; return false; }
-        if (db.hasUnresolvedOperation(command.id)) { gateReason = "an unresolved operation for this command blocks a retry"; return false; }
+        const group = finalObservation.mode === "arena" ? arenaTurnGroup(command) : undefined, turn = group ? arenaTurn(finalObservation) : undefined;
+        if (group && !finalObservation.rawShape.includes("arena-ordinary-three-charge")) { gateReason = "arena subtype is not positively verified as the reviewed ordinary three-charge condition"; return false; }
+        if (group && (finalObservation.rawShape.includes("arena-frozen") || finalObservation.rawShape.includes("arena-terminal"))) { gateReason = "arena is frozen or terminal"; return false; }
+        if (group && (turn === undefined || !finalObservation.battleId || isArenaTurnClaimed(db, finalObservation.heroId, finalObservation.battleId, turn, group))) { gateReason = "this arena action group is already claimed for the observed battle turn"; return false; }
+        if (!group && db.hasUnresolvedOperation(command.id)) { gateReason = "an unresolved operation for this command blocks a retry"; return false; }
 
         const observationId = db.saveObservation(finalObservation, "live-godville-final");
         decisionId = db.saveDecision(
@@ -152,7 +183,13 @@ export async function runSequence(
           },
           { confirmedBy: "diary event and bounded prana change" },
         );
+        if (group && turn !== undefined && finalObservation.battleId && !claimArenaTurn(db, finalObservation.heroId, finalObservation.battleId, turn, group, operation.id)) {
+          db.transitionOperation(operation.id, "PLANNED", "FAILED", "arena action group claim was unavailable");
+          gateReason = "arena action group was claimed concurrently";
+          return false;
+        }
         if (operation.state !== "PLANNED" || !db.transitionOperation(operation.id, "PLANNED", "EXECUTED")) return false;
+        if (group && turn !== undefined && finalObservation.battleId) claimedArena = { heroId: finalObservation.heroId, battleId: finalObservation.battleId, turn, group };
         if (command.id === "arena.zpg.start") db.confirmCooldown("zpg-active", operation.id, new Date(Date.now() + 4 * 60 * 60 * 1000));
         if (command.maxCharges > 0) {
           // The observed accumulator balance is persisted immediately before the fenced
@@ -183,6 +220,7 @@ export async function runSequence(
           if (command.id === "arena.zpg.start") db.confirmCooldown("zpg-active", operationId, new Date(Date.now() + 4 * 60 * 60 * 1000));
         } else {
           db.transitionOperation(operationId, "EXECUTED", "FAILED", result.reason);
+          if (claimedArena) releaseArenaTurnForUnclicked(db, claimedArena.heroId, claimedArena.battleId, claimedArena.turn, claimedArena.group, operationId, result.clicked === false && result.ambiguous === false);
           if (command.id === "arena.zpg.start" && !result.clicked && !result.ambiguous) db.clearCooldown("zpg-active");
           if (decisionId && command.maxCharges > 0) db.resolveReservation(decisionId, operationId, "CANCEL");
         }

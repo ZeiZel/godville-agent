@@ -56,7 +56,7 @@ export function reconcileLiveLifecycle(db: AgentDatabase, observation: Observati
     if (operation && (operation.state === "EXECUTED" || operation.state === "AMBIGUOUS")) db.transitionOperation(operation.id, operation.state as OperationState, "CONFIRMED", "verified field return after observed active arena");
     db.clearCooldown("zpg-active");
   }
-  db.expireUnresolvedWithoutReservations(state.lastActive.seenAt, state.lastActive.battleId, ["hero.encourage", "dungeon.move.auto", "polygon.move.safe"], godName);
+  db.expireUnresolvedWithoutReservations(state.lastActive.seenAt, state.lastActive.battleId, ["hero.encourage", "hero.punish", "arena.voice.heal", "arena.voice.attack", "dungeon.move.auto", "polygon.move.safe"], godName);
   db.rotateLiveMission(godName);
   delete state.arenaOperationId;
   delete state.lastActive;
