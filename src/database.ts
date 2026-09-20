@@ -55,6 +55,17 @@ export class AgentDatabase {
     this.db.prepare("INSERT OR IGNORE INTO handler_catalog(handler,version,priority,payload,verified_at) VALUES(?,?,?,?,?)").run(handler, version, priority, JSON.stringify(definition), verifiedAt ?? null);
   }
   setUserSetting(key: string, version: number, value: unknown): void { this.db.prepare("INSERT OR IGNORE INTO user_settings(key,version,value,updated_at) VALUES(?,?,?,?)").run(key, version, JSON.stringify(value), new Date().toISOString()); }
+  upsertUserSetting(key: string, version: number, value: unknown, now = new Date()): void { this.db.prepare("INSERT INTO user_settings(key,version,value,updated_at) VALUES(?,?,?,?) ON CONFLICT(key,version) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at").run(key, version, JSON.stringify(value), now.toISOString()); }
+  getUserSetting<T>(key: string, version: number): T | undefined { const row = this.db.prepare("SELECT value FROM user_settings WHERE key=? AND version=?").get(key, version) as { value: string } | null; if (!row) return undefined; try { return JSON.parse(row.value) as T; } catch { return undefined; } }
+  liveMissionId(godName: string): string {
+    const key = "live-mission";
+    const current = this.getUserSetting<{ godName?: string; id?: string }>(key, 1);
+    if (current?.godName?.toLocaleLowerCase() === godName.toLocaleLowerCase() && typeof current.id === "string" && current.id) return current.id;
+    const id = randomUUID();
+    this.upsertUserSetting(key, 1, { godName, id });
+    return id;
+  }
+  rotateLiveMission(godName: string): string { const id = randomUUID(); this.upsertUserSetting("live-mission", 1, { godName, id }); return id; }
   savePriorities(version: number, priorities: string[]): void { this.db.prepare("INSERT OR IGNORE INTO user_priorities(version,priorities,created_at) VALUES(?,?,?)").run(version, JSON.stringify(priorities), new Date().toISOString()); }
   latestPriorities(): string[] | undefined { const row = this.db.prepare("SELECT priorities FROM user_priorities ORDER BY version DESC LIMIT 1").get() as { priorities: string } | null; return row ? JSON.parse(row.priorities) as string[] : undefined; }
   acquireLease(name: string, owner: string, ttlMs: number, now = new Date()): boolean {
@@ -106,12 +117,25 @@ export class AgentDatabase {
   hasUnresolvedOperation(handler: string): boolean {
     return this.db.prepare("SELECT 1 FROM operations WHERE handler=? AND state IN ('EXECUTED','AMBIGUOUS') LIMIT 1").get(handler) != null;
   }
+  operation(id: string): StoredOperation | undefined { return this.db.prepare("SELECT id,intent_key as intentKey,handler,handler_version as handlerVersion,state FROM operations WHERE id=?").get(id) as StoredOperation | undefined; }
+  latestUnresolvedOperation(handler: string): StoredOperation | undefined { return this.db.prepare("SELECT id,intent_key as intentKey,handler,handler_version as handlerVersion,state FROM operations WHERE handler=? AND state IN ('EXECUTED','AMBIGUOUS') ORDER BY updated_at DESC LIMIT 1").get(handler) as StoredOperation | undefined; }
+  operationBelongsToAccount(id: string, godName: string): boolean {
+    return this.db.prepare("SELECT 1 FROM operations o JOIN observations obs ON json_extract(o.precondition,'$.finalObservationId')=obs.id WHERE o.id=? AND lower(json_extract(obs.payload,'$.heroId'))=lower(?)").get(id, godName) != null;
+  }
+  expireUnresolvedWithoutReservations(before: string, eventId: string, handlers: readonly string[], account?: string, result = "verified lifecycle transition expired old zero-charge action"): number {
+    if (!handlers.length || !eventId || !Number.isFinite(Date.parse(before))) return 0;
+    const placeholders = handlers.map(() => "?").join(",");
+    return Number(this.db.prepare(`UPDATE operations SET state='FAILED',result=?,updated_at=? WHERE state IN ('EXECUTED','AMBIGUOUS') AND created_at<=? AND handler IN (${placeholders}) AND EXISTS (SELECT 1 FROM observations obs WHERE json_extract(operations.precondition,'$.finalObservationId')=obs.id AND lower(json_extract(obs.payload,'$.heroId'))=lower(?) AND (json_extract(obs.payload,'$.battleId')=? OR json_extract(obs.payload,'$.eventId')=? OR json_extract(obs.payload,'$.eventId') LIKE ? OR (operations.handler='hero.encourage' AND json_extract(obs.payload,'$.mode')='idle'))) AND NOT EXISTS (SELECT 1 FROM charge_ledger WHERE kind='RESERVE' AND operation_id=operations.id)`).run(result, new Date().toISOString(), before, ...handlers, account ?? "", eventId, eventId, `godville-dungeon-turn:${eventId}:%`).changes);
+  }
   recoverUncertainOperations(leaseName?: string, owner?: string, fencingToken?: number, now = new Date()): number {
     if (!leaseName || !owner || fencingToken === undefined || !this.hasLease(leaseName, owner, fencingToken, now)) return 0;
     return Number(this.db.prepare("UPDATE operations SET state='AMBIGUOUS',updated_at=? WHERE state='EXECUTED'").run(now.toISOString()).changes);
   }
   isCooldownActive(name: string, now: Date): boolean { return this.db.prepare("SELECT 1 FROM cooldowns WHERE name=? AND expires_at>? ").get(name, now.toISOString()) != null; }
+  cooldownOperationId(name: string): string | undefined { const row = this.db.prepare("SELECT operation_id FROM cooldowns WHERE name=?").get(name) as { operation_id: string } | null; return row?.operation_id; }
   confirmCooldown(name: string, operationId: string, expiresAt: Date): void { this.db.prepare("INSERT INTO cooldowns(name,confirmed_at,expires_at,operation_id) VALUES(?,?,?,?) ON CONFLICT(name) DO UPDATE SET confirmed_at=excluded.confirmed_at,expires_at=excluded.expires_at,operation_id=excluded.operation_id").run(name, new Date().toISOString(), expiresAt.toISOString(), operationId); }
+  /** Releases a verified terminal live context. Callers must not use this for uncertain actions. */
+  clearCooldown(name: string): void { if (name) this.db.prepare("DELETE FROM cooldowns WHERE name=?").run(name); }
   importBalance(charges: number, note = "manual reconciliation", now = new Date()): boolean {
     if (!Number.isSafeInteger(charges) || charges < 0 || !note || !validDate(now)) return false;
     this.db.prepare("INSERT INTO charge_ledger(id,created_at,kind,charges,note) VALUES(?,?,?,?,?)").run(randomUUID(), now.toISOString(), "BALANCE", charges, note);

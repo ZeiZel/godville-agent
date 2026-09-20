@@ -2,15 +2,15 @@ import type { ObservationV1 } from "./types.js";
 
 export const LIVE_POLICY_VERSION = "live-policy/v1" as const;
 export type Comparator = "equals" | "gte" | "lte" | "missing";
-export type ObservationField = "freshness" | "mode" | "health" | "health.percent" | "prana.current" | "readiness.expedition" | "readiness.zpg";
+export type ObservationField = "freshness" | "mode" | "health" | "health.percent" | "prana.current" | "charges.current" | "readiness.expedition" | "readiness.dungeon" | "readiness.dungeon.navigation" | "readiness.polygon" | "readiness.arena.reserve" | "readiness.zpg";
 export interface Predicate { field: ObservationField; compare: Comparator; value: string | number | boolean }
 export interface SequenceRule { id: string; safety: "block" | "normal"; priority: number; weight: number; when: Predicate[]; sequence: string[] }
 export interface LivePolicy { schemaVersion: typeof LIVE_POLICY_VERSION; rules: SequenceRule[] }
 export interface PlannedSequence { ruleId: string; commands: string[]; reason: string }
 
-const fields = new Set<ObservationField>(["freshness", "mode", "health", "health.percent", "prana.current", "readiness.expedition", "readiness.zpg"]);
+const fields = new Set<ObservationField>(["freshness", "mode", "health", "health.percent", "prana.current", "charges.current", "readiness.expedition", "readiness.dungeon", "readiness.dungeon.navigation", "readiness.polygon", "readiness.arena.reserve", "readiness.zpg"]);
 const comparators = new Set<Comparator>(["equals", "gte", "lte", "missing"]);
-const commands = new Set(["hero.encourage"]);
+const commands = new Set(["hero.encourage", "hero.restore_prana", "adventure.dungeon.start", "adventure.polygon.start", "arena.zpg.start", "dungeon.move.auto", "polygon.move.safe"]);
 const isRecord = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 const isInteger = (value: unknown): value is number => typeof value === "number" && Number.isInteger(value);
 
@@ -18,8 +18,8 @@ function validPredicate(value: unknown): value is Predicate {
   if (!isRecord(value) || Object.keys(value).length !== 3 || !fields.has(value.field as ObservationField) || !comparators.has(value.compare as Comparator)) return false;
   if (typeof value.value === "number" && !Number.isFinite(value.value)) return false;
   if (value.compare === "missing") return value.value === true;
-  const numeric = value.field === "health.percent" || value.field === "prana.current";
-  const readiness = value.field === "readiness.expedition" || value.field === "readiness.zpg";
+  const numeric = value.field === "health.percent" || value.field === "prana.current" || value.field === "charges.current";
+  const readiness = value.field === "readiness.expedition" || value.field === "readiness.dungeon" || value.field === "readiness.dungeon.navigation" || value.field === "readiness.polygon" || value.field === "readiness.arena.reserve" || value.field === "readiness.zpg";
   if (numeric) return typeof value.value === "number";
   if (readiness) return value.compare === "equals" && typeof value.value === "boolean";
   return value.compare === "equals" && typeof value.value === "string";
@@ -47,8 +47,13 @@ function valueFor(field: ObservationField, observation: ObservationV1): string |
   if (field === "freshness" || field === "mode" || field === "health") return observation[field];
   if (field === "health.percent") return observation.healthPercent;
   if (field === "prana.current") return observation.prana?.current;
+  if (field === "charges.current") return observation.charges;
   if (field === "readiness.expedition") return observation.rawShape.includes("expedition-ready") ? true : undefined;
-  return observation.rawShape.includes("zpg-arena") ? true : undefined;
+  if (field === "readiness.dungeon") return observation.rawShape.includes("dungeon-ready") ? true : undefined;
+  if (field === "readiness.dungeon.navigation") return observation.rawShape.includes("dungeon-navigation-ready") ? true : undefined;
+  if (field === "readiness.polygon") return observation.rawShape.includes("polygon-ready") ? true : undefined;
+  if (field === "readiness.arena.reserve") return observation.rawShape.includes("arena-window-reserved");
+  return observation.rawShape.includes("zpg-ready") || observation.rawShape.includes("zpg-arena") ? true : undefined;
 }
 function matches(predicate: Predicate, observation: ObservationV1): boolean {
   const actual = valueFor(predicate.field, observation);

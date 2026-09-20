@@ -3,8 +3,20 @@ export const OBSERVATION_VERSION = "observation/v1" as const;
 export type Capability =
   | "temple" | "ark" | "pairs" | "laboratory" | "personal_boss"
   | "book" | "souls" | "shop" | "reliquary" | "pension";
-export type Mode = "idle" | "arena" | "dungeon" | "sailing" | "raid_boss" | "personal_boss" | "polygon" | "shop" | "unknown";
+export type Mode = "idle" | "arena" | "adventure_queue" | "dungeon" | "sailing" | "raid_boss" | "personal_boss" | "polygon" | "shop" | "unknown";
 export type Health = "known_safe" | "known_risk" | "unknown";
+export type ProgressionStage = "temple" | "ark" | "pairs" | "laboratory" | "personal_boss" | "book" | "souls" | "pension" | "shop" | "reliquary" | "unknown";
+export interface ProgressionProfile {
+  stage: ProgressionStage;
+  capabilities: Capability[];
+  templeCompletedAt?: string;
+  arkCompletedAt?: string;
+  arkMaterials?: { m: number; f: number };
+  bossName?: string;
+  words?: number;
+  savings?: number;
+  staleAt?: string;
+}
 
 export interface ObservationV1 {
   version: typeof OBSERVATION_VERSION;
@@ -14,9 +26,12 @@ export interface ObservationV1 {
   heroId?: string;
   /** Stable current game-event identity when the adapter can derive one; absent means live commands fail closed. */
   eventId?: string;
+  /** Opaque current fight identity observed from a reviewed public battle-log link. */
+  battleId?: string;
   mode: Mode;
   capabilities: Capability[];
   progressionKnown: boolean;
+  progression?: ProgressionProfile;
   prana?: { current: number; capacity: number };
   charges?: number;
   health: Health;
